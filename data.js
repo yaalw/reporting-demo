@@ -49,6 +49,10 @@
   ];
 
   const LEADSOORTEN = ['Website', 'Telefoon', 'Partner', 'Event'];
+  const ACCOUNTMANAGERS = ['Bram Jansen', 'Lotte Bakker', 'Daan Visser', 'Fleur Smit', 'Noor van Dijk'];
+  const KLANTTYPES = ['Aannemer', 'Woningcorporatie', 'VvE', 'Installateur', 'Projectontwikkelaar'];
+  const KLANTNAMEN = ['Bouwbedrijf Van Rijn', 'Woonstichting De Linde', 'VvE Parkzicht', 'Installatiegroep Noord', 'Terra Ontwikkeling', 'Aannemersbedrijf Kuiper', 'Wooncorporatie Havenstad', 'VvE De Meander', 'Van Oort Installatietechniek', 'Meridiaan Vastgoed', 'Bouwgroep Elzinga', 'Stichting Wonen Zuid', 'VvE Zonnehof', 'Techniek & Klimaat Boer', 'Nova Projecten', 'Hendriks Bouw', 'Woningstichting Eemland', 'VvE Rivierkade', 'Installatiebedrijf Smeets', 'Delta Gebiedsontwikkeling', 'Aannemerij De Groot', 'Corporatie Groenland', 'VvE Het Baken', 'Warmtetechniek Verhoeven', 'Urban Living Projecten', 'Bouwcombinatie Westland', 'Stichting Thuis', 'VvE Lindenhof', 'Klimaatinstallaties Peeters', 'Vesta Ontwikkeling', 'Bouwbedrijf Molenaar', 'Woonbedrijf Maasoever', 'VvE Stationsplein', 'Installatieteam Zuid', 'Horizon Projectontwikkeling', 'Aannemer Ten Brink'];
+  const KLANTEN = KLANTNAMEN.map((naam, i) => ({ id: 'k' + (i + 1), naam, type: KLANTTYPES[i % 5], regio: REGIOS[(i * 7) % REGIOS.length].naam, accountmanager: ACCOUNTMANAGERS[i % 5], top: [0, 3, 5, 9, 14, 19, 24, 29].includes(i), actief: ![6, 13, 22, 31, 34].includes(i), ontevreden: [4, 11, 17, 27, 33].includes(i), sinds: 2019 + (i % 7) }));
   const STAGES = ['Lead', 'Afspraak', 'Opname', 'Offerte', 'Order', 'Uitgevoerd'];
 
   // 13 maanden: sep 2025 t/m sep 2026 (laatste = huidige maand)
@@ -64,25 +68,35 @@
 
   const LEADS = [];
   let id = 1;
+  const VANDAAG = '2026-09-15';
+  const dagen = (y, m) => new Date(y, m + 1, 0).getDate();
+  const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
   MAANDEN.forEach((mnd, mi) => {
     const isHuidig = mnd.key === HUIDIG;
     REGIOS.forEach(reg => {
-      const basis = 34 * reg.pop * seizoen(mnd.maand) * (1 + mi * 0.012);
+      const jaar = +mnd.key.slice(0, 4); const nd = dagen(jaar, mnd.maand); const maxDag = isHuidig ? 15 : nd;
+      const basis = 44 * reg.pop * seizoen(mnd.maand) * (1 + mi * 0.012) * (maxDag / nd);
       const n = Math.round(basis * (0.9 + rnd() * 0.2));
       const eigen = ADVISEURS.filter(a => a.regio === reg.naam);
       for (let k = 0; k < n; k++) {
         const soortW = [3.2 * (isHuidig ? 0.8 : 1), 1.4, 1.6, 0.8];
         const leadsoort = pick(LEADSOORTEN, soortW);
+        const dag = 1 + Math.floor(rnd() * maxDag);
+        const datum = `${mnd.key}-${String(dag).padStart(2, '0')}`;
+        const b2b = rnd() < 0.18;
+        const klant = b2b ? KLANTEN[Math.floor(rnd() * KLANTEN.length)] : null;
         const product = pick(PRODUCTEN, PRODUCTEN.map(p => p.w * Math.pow(1 + p.trend, mi)));
-        const adv = eigen.length ? eigen[Math.floor(rnd() * eigen.length)] : ADVISEURS[Math.floor(rnd() * ADVISEURS.length)];
+        const adv = klant ? ADVISEURS.find(a => a.naam === klant.accountmanager) : eigen.length ? eigen[Math.floor(rnd() * eigen.length)] : ADVISEURS[Math.floor(rnd() * ADVISEURS.length)];
         const extern = eigen.length === 0;
 
         // funnel-conversies
         let pAfspraak = { Website: 0.5, Telefoon: 0.62, Partner: 0.68, Event: 0.45 }[leadsoort];
         if (extern) pAfspraak *= 0.72; // geen adviseur in de regio: langere doorlooptijd, meer uitval
+        if (klant) { pAfspraak = klant.top ? 0.85 : 0.7; if (klant.ontevreden) pAfspraak *= 0.75; if (!klant.actief) pAfspraak *= 0.5; }
         let pOpname = 0.86;
         let pOfferte = 0.8;
         let pOrder = { Website: 0.38, Telefoon: 0.42, Partner: 0.5, Event: 0.36 }[leadsoort];
+        if (klant) pOrder = klant.top ? 0.6 : klant.ontevreden ? 0.25 : 0.45;
         // verhaal: in de huidige maand zakt opname -> offerte bij twee adviseurs fors
         if (isHuidig && (adv.id === 'a3' || adv.id === 'a7')) pOfferte = 0.36;
         if (isHuidig && adv.id === 'a2') pOfferte = 0.6;
@@ -92,23 +106,25 @@
         if (stage === 1 && rnd() < pOpname) stage = 2;
         if (stage === 2 && rnd() < pOfferte) stage = 3;
         if (stage === 3 && rnd() < pOrder) stage = 4;
-        if (stage === 4 && !isHuidig && rnd() < 0.85) stage = 5;
+        let orderDatum = null;
+        if (stage >= 4) { orderDatum = addDays(datum, 4 + Math.floor(rnd() * 32)); if (orderDatum > VANDAAG) { stage = 3; orderDatum = null; } }
+        if (stage === 4 && orderDatum && orderDatum < addDays(VANDAAG, -30) && rnd() < 0.85) stage = 5;
 
         const items = [product.naam];
         if (stage >= 3 && rnd() < 0.28) {
           const p2 = pick(PRODUCTEN, PRODUCTEN.map(p => p.naam === product.naam ? 0 : p.w));
           items.push(p2.naam);
         }
-        const waarde = stage >= 3 ? Math.round(items.reduce((sum, nm) => sum + PRODUCTEN.find(p => p.naam === nm).prijs * (0.8 + rnd() * 0.45), 0) / 10) * 10 : 0;
+        const mult = klant ? (klant.type === 'Woningcorporatie' || klant.type === 'Projectontwikkelaar' ? 2.5 + rnd() * 4 : 1.3 + rnd() * 1.6) : 1;
+        const waarde = stage >= 3 ? Math.round(items.reduce((sum, nm) => sum + PRODUCTEN.find(p => p.naam === nm).prijs * (0.8 + rnd() * 0.45), 0) * mult / 10) * 10 : 0;
         const marge = stage >= 3 ? items.reduce((sum, nm) => { const p = PRODUCTEN.find(x => x.naam === nm); return sum + p.marge; }, 0) / items.length : 0;
 
-        LEADS.push({ id: id++, maand: mnd.key, regio: reg.naam, adviseur: adv.id, leadsoort, product: product.naam, items, stage, waarde, marge: +marge.toFixed(3), extern });
+        LEADS.push({ id: id++, maand: mnd.key, datum, regio: klant ? klant.regio : reg.naam, adviseur: adv.id, leadsoort, product: product.naam, items, stage, waarde, orderDatum, marge: +marge.toFixed(3), extern: extern && !klant, segment: klant ? 'B2B' : 'B2C', klant: klant ? klant.id : null });
       }
     });
   });
 
   // Pipeline-snapshots: 26 weken, wekelijkse opname van de openstaande offerteportefeuille per accountmanager
-  const ACCOUNTMANAGERS = ['Bram Jansen', 'Lotte Bakker', 'Daan Visser', 'Fleur Smit', 'Noor van Dijk'];
   const SNAPSHOTS = [];
   let open = { 'Bram Jansen': 1180000, 'Lotte Bakker': 940000, 'Daan Visser': 1010000, 'Fleur Smit': 760000, 'Noor van Dijk': 690000 };
   for (let w = 25; w >= 0; w--) {
@@ -127,5 +143,6 @@
     SNAPSHOTS.push({ datum: d.toISOString().slice(0, 10), label: d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' }), per });
   }
 
-  window.DATA = { REGIOS, ADVISEURS, PRODUCTEN, LEADSOORTEN, STAGES, MAANDEN, HUIDIG, VORIG, LEADS, ACCOUNTMANAGERS, SNAPSHOTS };
+  LEADS.sort((a, b) => a.datum.localeCompare(b.datum));
+  window.DATA = { REGIOS, ADVISEURS, PRODUCTEN, LEADSOORTEN, STAGES, MAANDEN, HUIDIG, VORIG, LEADS, ACCOUNTMANAGERS, SNAPSHOTS, KLANTEN, KLANTTYPES, VANDAAG };
 })();
