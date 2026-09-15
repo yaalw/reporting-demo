@@ -4,11 +4,13 @@
 
   // ---------- Rollen (gesimuleerde Microsoft 365-rollen) ----------
   const ROLES = {
-    directie: { naam: 'Daniël Roos', init: 'DR', label: 'Directie', pages: ['management', 'sales', 'product', 'regio', 'pipeline', 'opzet'], marge: true, datasets: ['omzet-funnel', 'adviseur-conversie', 'regio-capaciteit', 'product-groei', 'pipeline-mutaties'] },
-    sales: { naam: 'Merel Koning', init: 'MK', label: 'Salesmanager', pages: ['sales', 'product', 'regio', 'pipeline', 'opzet'], marge: false, datasets: ['omzet-funnel', 'adviseur-conversie', 'regio-capaciteit', 'product-groei', 'pipeline-mutaties'] },
-    adviseur: { naam: 'Lotte Bakker', init: 'LB', label: 'Adviseur', pages: ['sales', 'pipeline', 'opzet'], marge: false, adviseurId: 'a3', datasets: ['omzet-funnel', 'adviseur-conversie', 'pipeline-mutaties'], eigen: true },
+    directie: { naam: 'Daniël Roos', init: 'DR', label: 'Directie', pages: ['overzicht', 'sales', 'product', 'regio', 'pipeline', 'opzet'], marge: true, datasets: ['omzet-funnel', 'adviseur-conversie', 'regio-capaciteit', 'product-groei', 'pipeline-mutaties'] },
+    sales: { naam: 'Merel Koning', init: 'MK', label: 'Salesmanager', pages: ['overzicht', 'sales', 'product', 'regio', 'pipeline', 'opzet'], marge: false, datasets: ['omzet-funnel', 'adviseur-conversie', 'regio-capaciteit', 'product-groei', 'pipeline-mutaties'] },
+    adviseur: { naam: 'Lotte Bakker', init: 'LB', label: 'Adviseur', pages: ['overzicht', 'sales', 'pipeline', 'opzet'], marge: false, adviseurId: 'a3', datasets: ['omzet-funnel', 'adviseur-conversie', 'pipeline-mutaties'], eigen: true },
   };
-  const state = { role: 'directie', page: 'management', f: { van: D.HUIDIG, tot: D.HUIDIG, leadsoort: '', adviseur: '', product: '' } };
+  const KEYS = D.MAANDEN.map(m => m.key);
+  const DIMS = { adviseur: 'Adviseur', product: 'Product', regio: 'Regio', leadsoort: 'Leadsoort', maand: 'Maand' };
+  const state = { role: 'directie', page: 'overzicht', f: { van: KEYS.at(-3), tot: D.HUIDIG, leadsoort: '', adviseur: '', product: '', regio: '' }, dim: {} };
   let charts = [];
 
   // ---------- Helpers ----------
@@ -20,325 +22,325 @@
   const groupBy = (arr, f) => arr.reduce((m, x) => { const k = f(x); (m[k] = m[k] || []).push(x); return m; }, {});
   const advNaam = id => (D.ADVISEURS.find(a => a.id === id) || {}).naam || id;
   const mLabel = key => (D.MAANDEN.find(m => m.key === key) || {}).label || key;
-  const delta = (cur, prev, opts = {}) => {
-    if (!prev) return `<span class="delta flat">–</span>`;
+  const dimLabel = (k, v) => k === 'adviseur' ? advNaam(v) : k === 'maand' ? mLabel(v) : v;
+  const dtxt = (cur, prev, opts = {}) => {
+    if (!prev) return `<span class="dim">–</span>`;
     const d = (cur - prev) / prev; const up = d >= 0; const good = opts.invert ? !up : up;
-    return `<span class="delta ${Math.abs(d) < 0.005 ? 'flat' : good ? 'up' : 'down'}">${up ? '▲' : '▼'} ${pct(Math.abs(d), 1)}</span>`;
+    return `<span class="${Math.abs(d) < 0.005 ? 'dim' : good ? 'pos' : 'neg'}">${up ? '+' : '−'}${pct(Math.abs(d), 1)}</span>`;
   };
-  const COLORS = ['#1f5eff', '#7b3fe4', '#12855a', '#c77a00', '#d23c3c', '#0ea5b7', '#8a8f9c', '#e0559b'];
+  const INK = '#111318', ACC = '#2457e6', GREY = '#d5d8de';
+  const PAL = ['#111318', '#2457e6', '#8a94a6', '#c3c8d2', '#5b7fe8', '#6f7480', '#9fb3f0', '#e3e6eb'];
   const role = () => ROLES[state.role];
 
   Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
   Chart.defaults.font.size = 11.5;
-  Chart.defaults.color = '#6b7280';
-  Chart.defaults.plugins.legend.labels.boxWidth = 10;
-  Chart.defaults.plugins.legend.labels.boxHeight = 10;
+  Chart.defaults.color = '#6f7480';
+  Chart.defaults.plugins.legend.position = 'bottom';
+  Chart.defaults.plugins.legend.labels.boxWidth = 8;
+  Chart.defaults.plugins.legend.labels.boxHeight = 8;
   Chart.defaults.plugins.legend.labels.usePointStyle = true;
-  const axis = (fmt) => ({ x: { grid: { display: false } }, y: { grid: { color: '#f0f1f3' }, border: { display: false }, ticks: { callback: fmt || (v => v) } } });
+  Chart.defaults.plugins.legend.labels.padding = 16;
+  Chart.defaults.plugins.tooltip.backgroundColor = '#111318';
+  Chart.defaults.plugins.tooltip.padding = 10;
+  Chart.defaults.plugins.tooltip.cornerRadius = 6;
+  const yAxis = (fmt, extra = {}) => ({ grid: { color: '#f3f4f6' }, border: { display: false }, ticks: { callback: fmt || (v => v), maxTicksLimit: 6 }, ...extra });
+  const xAxis = () => ({ grid: { display: false }, border: { display: false } });
+  const pointer = (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; };
   function mk(id, cfg) { const el = document.getElementById(id); if (!el) return; const c = new Chart(el, cfg); charts.push(c); return c; }
   function clearCharts() { charts.forEach(c => c.destroy()); charts = []; }
 
-  // ---------- Data-scoping ----------
+  // ---------- Data ----------
   const scoped = () => role().eigen ? D.LEADS.filter(l => l.adviseur === role().adviseurId) : D.LEADS;
-  const KEYS = D.MAANDEN.map(m => m.key);
-  const periodMonths = () => {
-    let a = KEYS.indexOf(state.f.van), b = KEYS.indexOf(state.f.tot);
-    if (a < 0) a = KEYS.length - 1; if (b < 0) b = KEYS.length - 1; if (a > b) [a, b] = [b, a];
-    return KEYS.slice(a, b + 1);
-  };
-  const prevMonths = (months) => {
-    const keys = D.MAANDEN.map(m => m.key); const i = keys.indexOf(months[0]);
-    if (i - months.length < 0) return [];
-    return keys.slice(i - months.length, i);
-  };
+  const periodMonths = () => { let a = KEYS.indexOf(state.f.van), b = KEYS.indexOf(state.f.tot); if (a < 0) a = KEYS.length - 1; if (b < 0) b = KEYS.length - 1; if (a > b) [a, b] = [b, a]; return KEYS.slice(a, b + 1); };
+  const prevMonths = months => { const i = KEYS.indexOf(months[0]); return i - months.length < 0 ? [] : KEYS.slice(i - months.length, i); };
   const inMonths = (leads, months) => leads.filter(l => months.includes(l.maand));
-  const applyFilters = (leads) => leads.filter(l => (!state.f.leadsoort || l.leadsoort === state.f.leadsoort) && (!state.f.adviseur || l.adviseur === state.f.adviseur) && (!state.f.product || l.items.includes(state.f.product)));
-
-  const stats = (leads) => {
+  const dimFilters = () => Object.fromEntries(['leadsoort', 'adviseur', 'product', 'regio'].filter(k => state.f[k]).map(k => [k, state.f[k]]));
+  const applyFilters = leads => leads.filter(l => (!state.f.leadsoort || l.leadsoort === state.f.leadsoort) && (!state.f.adviseur || l.adviseur === state.f.adviseur) && (!state.f.product || l.items.includes(state.f.product)) && (!state.f.regio || l.regio === state.f.regio));
+  const filtered = () => applyFilters(scoped());
+  const stats = leads => {
     const orders = leads.filter(l => l.stage >= 4);
-    return {
-      leads: leads.length, afspraken: leads.filter(l => l.stage >= 1).length, opnames: leads.filter(l => l.stage >= 2).length, offertes: leads.filter(l => l.stage >= 3).length, orders: orders.length,
-      omzet: sum(orders, l => l.waarde), marge: sum(orders, l => l.waarde * l.marge), offerteWaarde: sum(leads.filter(l => l.stage === 3), l => l.waarde),
-      conv: leads.length ? orders.length / leads.length : 0,
-    };
+    return { leads: leads.length, afspraken: leads.filter(l => l.stage >= 1).length, opnames: leads.filter(l => l.stage >= 2).length, offertes: leads.filter(l => l.stage >= 3).length, orders: orders.length, omzet: sum(orders, l => l.waarde), marge: sum(orders, l => l.waarde * l.marge), conv: leads.length ? orders.length / leads.length : 0 };
   };
   const funnelCounts = leads => D.STAGES.slice(0, 5).map((s, i) => ({ stage: s, n: leads.filter(l => l.stage >= i).length }));
   const regioCap = r => sum(D.ADVISEURS.filter(a => a.regio === r), a => a.cap) * 4.33;
+  const periodLabel = months => months.length === 1 ? mLabel(months[0]) : `${mLabel(months[0])} – ${mLabel(months.at(-1))}`;
 
-  // ---------- Renderen ----------
+  // ---------- Filters ----------
+  function setFilter(k, v) {
+    if (k === 'maand') { state.f.van = v; state.f.tot = v; }
+    else if (k in state.f) state.f[k] = v;
+    render();
+  }
+  function renderFilters() {
+    const months = periodMonths(); const n = months.length; const r = role();
+    const preset = (l, k, len) => `<button type="button" class="preset ${n === len && months.at(-1) === D.HUIDIG ? 'on' : ''}" data-preset="${k}">${l}</button>`;
+    const sel = (key, label, opts) => `<select data-f="${key}" class="${state.f[key] ? 'on' : ''}"><option value="">${label}</option>${opts.map(o => `<option value="${o.v}" ${state.f[key] === o.v ? 'selected' : ''}>${o.l}</option>`).join('')}</select>`;
+    const chips = Object.entries(dimFilters()).map(([k, v]) => `<span class="chip"><span>${DIMS[k]}</span>${dimLabel(k, v)}<button data-clear="${k}" aria-label="Verwijder filter">×</button></span>`).join('');
+    $('#filters').innerHTML = `
+      <div class="range"><input type="month" data-f="van" min="${KEYS[0]}" max="${KEYS.at(-1)}" value="${state.f.van}"><span>–</span><input type="month" data-f="tot" min="${KEYS[0]}" max="${KEYS.at(-1)}" value="${state.f.tot}"><span class="sep"></span>${preset('Maand', 'm', 1)}${preset('Kwartaal', '3', 3)}${preset('Jaar', '12', 12)}</div>
+      ${sel('leadsoort', 'Leadsoort', D.LEADSOORTEN.map(x => ({ v: x, l: x })))}
+      ${r.eigen ? '' : sel('adviseur', 'Adviseur', D.ADVISEURS.map(a => ({ v: a.id, l: a.naam })))}
+      ${sel('product', 'Product', D.PRODUCTEN.map(x => ({ v: x.naam, l: x.naam })))}
+      ${r.pages.includes('regio') ? sel('regio', 'Regio', D.REGIOS.map(x => ({ v: x.naam, l: x.naam }))) : ''}
+      ${chips}${chips ? '<button class="clear" data-clear="all">Wis filters</button>' : ''}
+      <span class="scope">${r.eigen ? `Alleen eigen gegevens · <b>${r.naam}</b>` : `<b>${num(inMonths(filtered(), months).length)}</b> leads in selectie`}</span>`;
+    document.querySelectorAll('#filters [data-f]').forEach(el => el.onchange = () => { const v = el.value; if ((el.dataset.f === 'van' || el.dataset.f === 'tot') && !KEYS.includes(v)) { el.value = state.f[el.dataset.f]; return; } state.f[el.dataset.f] = v; render(); });
+    document.querySelectorAll('#filters [data-preset]').forEach(el => el.onclick = () => { const k = el.dataset.preset; state.f.tot = D.HUIDIG; state.f.van = k === 'm' ? D.HUIDIG : KEYS.at(-(k === '3' ? 3 : 12)); render(); });
+  }
+
+  // ---------- Render ----------
   function render() {
     clearCharts();
     const r = role();
     $('#avatar').textContent = r.init;
-    document.querySelectorAll('.nav').forEach(b => {
-      const ok = r.pages.includes(b.dataset.page);
-      b.disabled = !ok; b.classList.toggle('active', b.dataset.page === state.page);
-      b.querySelector('.lock')?.remove(); if (!ok) b.insertAdjacentHTML('beforeend', '<span class="lock">🔒</span>');
-    });
     if (!r.pages.includes(state.page)) state.page = r.pages[0];
-    document.querySelectorAll('.nav').forEach(b => b.classList.toggle('active', b.dataset.page === state.page));
-    $('#cpScope').textContent = `${r.label} · ${r.naam} · ${r.datasets.length} datasets beschikbaar`;
-    const pages = { management: pageManagement, sales: pageSales, product: pageProduct, regio: pageRegio, pipeline: pagePipeline, opzet: pageOpzet };
+    document.querySelectorAll('.tab').forEach(b => { b.disabled = !r.pages.includes(b.dataset.page); b.classList.toggle('active', b.dataset.page === state.page); });
+    $('#cpScope').textContent = `${r.label} · ${r.datasets.length} datasets`;
+    renderFilters();
+    const pages = { overzicht: pageOverzicht, sales: pageSales, product: pageProduct, regio: pageRegio, pipeline: pagePipeline, opzet: pageOpzet };
     $('#main').innerHTML = pages[state.page]();
     (afterRender[state.page] || (() => { }))();
-    bindFilters();
+    $('#main').scrollTop = 0;
   }
   const afterRender = {};
 
-  const head = (title, sub, filters = '') => `<div class="page-head"><div><h1>${title}</h1><p>${sub}</p></div><div class="filters">${filters}${role().eigen ? `<span class="scope" style="align-self:center">Alleen eigen gegevens · ${role().naam}</span>` : ''}</div></div>`;
-  const periodeSelect = () => {
-    const months = periodMonths(); const n = months.length;
-    const preset = (l, k) => `<button type="button" class="preset ${(k === 'm' && n === 1 && months[0] === D.HUIDIG) || (k === '3' && n === 3 && months[2] === D.HUIDIG) || (k === '12' && n === 12 && months[11] === D.HUIDIG) ? 'on' : ''}" data-preset="${k}">${l}</button>`;
-    return `<div class="range"><input type="month" data-f="van" min="${KEYS[0]}" max="${KEYS.at(-1)}" value="${state.f.van}"><span>t/m</span><input type="month" data-f="tot" min="${KEYS[0]}" max="${KEYS.at(-1)}" value="${state.f.tot}"><span class="sep"></span>${preset('Deze maand', 'm')}${preset('3 mnd', '3')}${preset('12 mnd', '12')}</div>`;
-  };
-  const sel = (key, label, opts) => `<select data-f="${key}"><option value="">${label}: alle</option>${opts.map(o => `<option value="${o.v}" ${state.f[key] === o.v ? 'selected' : ''}>${o.l}</option>`).join('')}</select>`;
-  function bindFilters() {
-    document.querySelectorAll('[data-f]').forEach(el => el.onchange = () => { const v = el.value; if ((el.dataset.f === 'van' || el.dataset.f === 'tot') && !KEYS.includes(v)) { el.value = state.f[el.dataset.f]; return; } state.f[el.dataset.f] = v; render(); });
-    document.querySelectorAll('[data-preset]').forEach(el => el.onclick = () => { const k = el.dataset.preset; state.f.tot = D.HUIDIG; state.f.van = k === 'm' ? D.HUIDIG : KEYS.at(-(k === '3' ? 3 : 12)); render(); });
-  }
-  const kpi = (lbl, val, cur, prev, opts = {}) => `<div class="card c3 kpi ${opts.drill ? 'clickable' : ''}" ${opts.drill ? drillAttr(opts.drill) : ''}><div class="lbl">${lbl}${opts.drill ? ' <span class="drillhint">drilldown ›</span>' : ''}</div><div class="val">${val}</div>${delta(cur, prev, opts)}<span class="vs">vs. ${opts.vs || 'vorige periode'}</span></div>`;
+  // ---------- Componenten ----------
+  const head = (title, sub) => `<div class="page-head"><h1>${title}</h1><p>${sub}</p></div>`;
+  const cardhead = (h, sub, right = '') => `<div class="cardhead"><div><h3>${h}</h3><div class="sub">${sub}</div></div>${right}</div>`;
+  const kpi = (lbl, val, cur, prev, opts = {}) => `<div class="kpi ${opts.drill ? 'clickable' : ''}" ${opts.drill ? `data-set="${opts.drill[0]}" data-val="${opts.drill[1]}"` : ''}><div class="lbl">${lbl}</div><div class="val">${val}</div><div class="d">${dtxt(cur, prev, opts)} <span>${opts.vs || 'vs. vorige periode'}</span></div></div>`;
+  const kpis = items => `<div class="kpis" style="--n:${items.length}">${items.join('')}</div>`;
 
-  // ----- Management -----
-  function pageManagement() {
-    const cur = stats(inMonths(D.LEADS, [D.HUIDIG])), prev = stats(inMonths(D.LEADS, [D.VORIG]));
-    const snap = D.SNAPSHOTS[D.SNAPSHOTS.length - 1], snapPrev = D.SNAPSHOTS[D.SNAPSHOTS.length - 2];
-    const open = sum(D.ACCOUNTMANAGERS, am => snap.per[am].open), openPrev = sum(D.ACCOUNTMANAGERS, am => snapPrev.per[am].open);
-    const capTot = sum(D.ADVISEURS, a => a.cap) * 4.33;
-    const alerts = buildAlerts();
-    return head('Management dashboard', `Kerncijfers ${mLabel(D.HUIDIG)} ten opzichte van ${mLabel(D.VORIG)}. Alle regio's, alle adviseurs.`) + `
-      <div class="grid">
-        ${kpi('Omzet (orders)', eurK(cur.omzet), cur.omzet, prev.omzet, { vs: mLabel(D.VORIG), drill: { maand: D.HUIDIG } })}
-        ${kpi('Leads', num(cur.leads), cur.leads, prev.leads, { vs: mLabel(D.VORIG), drill: { maand: D.HUIDIG, _dim: 'leadsoort' } })}
-        ${kpi('Conversie lead → order', pct(cur.conv, 1), cur.conv, prev.conv, { vs: mLabel(D.VORIG), drill: { maand: D.HUIDIG, _dim: 'adviseur' } })}
-        ${kpi('Orderportefeuille (open offertes)', eurK(open), open, openPrev, { vs: 'vorige week' })}
-        <div class="card c8 stretch"><h3>Omzet en orders per maand</h3><div class="sub">Gesloten orders uit het bronsysteem, historisch vastgelegd in de reporting-database</div><div class="chart"><canvas id="chOmzet"></canvas></div></div>
-        <div class="card c4"><h3>Belangrijkste afwijkingen</h3><div class="sub">Automatisch gesignaleerd t.o.v. vorige periode</div><div class="alerts">${alerts.map(a => `<div class="alert ${a.type}"><div><b>${a.title}</b><span>${a.body}</span></div><button data-ask="${a.q}">✦ Vraag CoPilot</button></div>`).join('')}</div></div>
-        <div class="card c6"><h3>Funnel ${mLabel(D.HUIDIG)}</h3><div class="sub">Conversie per stap, vergeleken met ${mLabel(D.VORIG)}</div>${funnelHtml(inMonths(D.LEADS, [D.HUIDIG]), inMonths(D.LEADS, [D.VORIG]))}</div>
-        <div class="card c6"><h3>Capaciteit adviseurs</h3><div class="sub">Afspraken deze maand t.o.v. beschikbare afspraakslots · totaal ${pct(cur.afspraken / capTot)} bezet</div><div class="chart"><canvas id="chCap"></canvas></div></div>
-      </div>`;
-  }
   function funnelHtml(cur, prev) {
     const fc = funnelCounts(cur), fp = funnelCounts(prev); const max = fc[0].n || 1;
     return `<div class="funnel">${fc.map((s, i) => {
       const cv = i ? s.n / (fc[i - 1].n || 1) : 1, pv = i ? fp[i].n / (fp[i - 1].n || 1) : 1; const d = cv - pv;
-      return `<div class="frow"><span>${s.stage}</span><div class="fb" style="width:${(s.n / max) * 100}%"></div><span class="n">${num(s.n)}</span><span class="cv">${i ? `${pct(cv)} <span class="tag ${d < -0.03 ? 'bad' : d > 0.03 ? 'good' : ''}">${d >= 0 ? '+' : ''}${(d * 100).toFixed(0)}pt</span>` : ''}</span></div>`;
+      return `<div class="frow"><span>${s.stage}</span><div class="fb" style="width:${(s.n / max) * 100}%"></div><span class="n">${num(s.n)}</span><span class="cv">${i ? `${pct(cv)} <span class="${d < -0.03 ? 'neg' : d > 0.03 ? 'pos' : 'dim'}">${d >= 0 ? '+' : '−'}${Math.abs(d * 100).toFixed(0)}pt</span>` : ''}</span></div>`;
     }).join('')}</div>`;
   }
-  function buildAlerts() {
-    const cur = stats(inMonths(D.LEADS, [D.HUIDIG])), prev = stats(inMonths(D.LEADS, [D.VORIG]));
-    const out = [];
-    out.push({ type: 'bad', title: `Omzet ${pct((cur.omzet - prev.omzet) / prev.omzet, 0)} t.o.v. ${mLabel(D.VORIG)}`, body: 'Daling groter dan het seizoenspatroon verklaart.', q: 'De omzet is deze maand gedaald. Waar in de funnel gebeurt dit?' });
-    const snap = D.SNAPSHOTS.at(-1), sp = D.SNAPSHOTS.at(-2); const dOpen = sum(D.ACCOUNTMANAGERS, am => snap.per[am].open - sp.per[am].open);
-    out.push({ type: 'bad', title: `Pipeline ${eurK(dOpen)} in één week`, body: 'Grootste weekmutatie in de afgelopen 26 weken.', q: 'Waarom is de pipeline ineens gezakt met 400.000?' });
-    const web = inMonths(D.LEADS, [D.HUIDIG]).filter(l => l.leadsoort === 'Website').length, webP = inMonths(D.LEADS, [D.VORIG]).filter(l => l.leadsoort === 'Website').length;
-    out.push({ type: 'warn', title: `Website-leads ${pct((web - webP) / webP, 0)}`, body: 'Overige leadsoorten volgen het seizoen.', q: 'Welke leadsoorten dalen het hardst?' });
-    out.push({ type: 'warn', title: 'Onbalans leads vs. capaciteit', body: 'Zuid-Holland en 5 regio\'s zonder eigen adviseur.', q: 'In welke regio hebben we veel leads maar te weinig adviseurs beschikbaar?' });
-    return out;
+
+  // Uitsplitsing: tabel per dimensie, rijen klikbaar → filter
+  function breakdown(key, cur, prev, months) {
+    const avail = Object.keys(DIMS).filter(k => !(k in dimFilters()) && !(k === 'adviseur' && role().eigen) && !(k === 'regio' && !role().pages.includes('regio')) && !(k === 'maand' && months.length === 1));
+    const dim = avail.includes(state.dim[key]) ? state.dim[key] : avail[0];
+    const val = l => dim === 'product' ? l.items[0] : l[dim];
+    const rows = Object.entries(groupBy(cur, val)).map(([k, g]) => ({ k, s: stats(g), p: stats(prev.filter(l => val(l) === k)) })).sort((a, b) => dim === 'maand' ? a.k.localeCompare(b.k) : b.s.omzet - a.s.omzet);
+    const max = Math.max(1, ...rows.map(x => x.s.omzet)); const m = role().marge;
+    return `<div class="card c12">${cardhead('Uitsplitsing', 'Klik op een rij om de hele pagina te filteren', `<div class="dims" data-dimkey="${key}">${avail.map(k => `<button class="${k === dim ? 'on' : ''}" data-dim="${k}">${DIMS[k]}</button>`).join('')}</div>`)}
+      <table><thead><tr><th>${DIMS[dim]}</th><th class="num">Leads</th><th class="num">Afspraken</th><th class="num">Offertes</th><th class="num">Orders</th><th class="num">Conversie</th><th class="num">Afspraak → offerte</th><th class="num">Omzet</th>${m ? '<th class="num">Marge</th>' : ''}<th class="num">Δ omzet</th></tr></thead><tbody>
+      ${rows.map(r => `<tr class="drillrow" data-set="${dim}" data-val="${r.k}"><td>${dimLabel(dim, r.k)}</td><td class="num">${r.s.leads}</td><td class="num">${r.s.afspraken}</td><td class="num">${r.s.offertes}</td><td class="num">${r.s.orders}</td><td class="num">${pct(r.s.conv, 1)}</td><td class="num">${r.s.afspraken ? pct(r.s.offertes / r.s.afspraken) : '–'}</td><td class="num">${eur(r.s.omzet)}<span class="bar" style="width:${r.s.omzet / max * 56}px"></span></td>${m ? `<td class="num">${eur(r.s.marge)}</td>` : ''}<td class="num">${r.p.omzet < 3000 ? '<span class="dim">–</span>' : dtxt(r.s.omzet, r.p.omzet)}</td></tr>`).join('')}</tbody></table></div>`;
   }
-  afterRender.management = () => {
-    const byM = D.MAANDEN.map(m => stats(inMonths(D.LEADS, [m.key])));
-    mk('chOmzet', { data: { labels: D.MAANDEN.map(m => m.label), datasets: [{ type: 'bar', label: 'Omzet', data: byM.map(s => s.omzet), backgroundColor: COLORS[0], borderRadius: 4, yAxisID: 'y' }, { type: 'line', label: 'Orders', data: byM.map(s => s.orders), borderColor: COLORS[1], backgroundColor: COLORS[1], tension: .3, pointRadius: 3, yAxisID: 'y1' }] }, options: { maintainAspectRatio: false, onClick: (e, els) => { if (els.length) openDrill({ maand: D.MAANDEN[els[0].index].key }); }, onHover: (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; }, scales: { x: { grid: { display: false } }, y: { grid: { color: '#f0f1f3' }, border: { display: false }, ticks: { callback: v => eurK(v) } }, y1: { position: 'right', grid: { display: false }, border: { display: false } } }, plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.dataset.label === 'Omzet' ? eur(c.raw) : c.raw}` } } } } });
-    const regs = D.REGIOS.filter(r => regioCap(r.naam) > 0).map(r => r.naam);
-    const cur = inMonths(D.LEADS, [D.HUIDIG]);
-    mk('chCap', { type: 'bar', data: { labels: regs, datasets: [{ label: 'Afspraken', data: regs.map(r => cur.filter(l => l.regio === r && l.stage >= 1).length), backgroundColor: COLORS[0], borderRadius: 4 }, { label: 'Capaciteit (slots)', data: regs.map(r => Math.round(regioCap(r))), backgroundColor: '#d9dde6', borderRadius: 4 }] }, options: { maintainAspectRatio: false, onClick: (e, els) => { if (els.length) openDrill({ regio: regs[els[0].index], maand: D.HUIDIG }); }, onHover: (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; }, scales: axis() } });
+
+  function records(cur) {
+    const recs = cur.slice().sort((a, b) => b.stage - a.stage || b.waarde - a.waarde).slice(0, 50);
+    const stageTag = st => `<span class="tag ${st >= 4 ? 'good' : st === 3 ? 'warn' : ''}">${D.STAGES[st]}</span>`;
+    return `<details class="records"><summary>Onderliggende records uit het bronsysteem (${num(cur.length)}${recs.length < cur.length ? `, eerste ${recs.length} getoond` : ''})</summary>
+      <div class="card" style="overflow-x:auto"><table class="recs"><thead><tr><th>#</th><th>Maand</th><th>Adviseur</th><th>Regio</th><th>Leadsoort</th><th>Producten</th><th>Stap</th><th class="num">Waarde</th></tr></thead><tbody>
+      ${recs.map(l => `<tr><td class="mono">L-${String(l.id).padStart(5, '0')}</td><td>${mLabel(l.maand)}</td><td>${advNaam(l.adviseur)}</td><td>${l.regio}${l.extern ? ' <span class="tag">op afstand</span>' : ''}</td><td>${l.leadsoort}</td><td>${l.items.join(' + ')}</td><td>${stageTag(l.stage)}</td><td class="num">${l.waarde ? eur(l.waarde) : '–'}</td></tr>`).join('')}</tbody></table></div></details>`;
+  }
+
+  // Gedeelde hero: maandreeks met geselecteerde maanden benadrukt; klik = maand selecteren
+  function monthlyHero(id, base, months, opts) {
+    const byM = KEYS.map(m => stats(base.filter(l => l.maand === m)));
+    const on = m => months.includes(m);
+    const ds = opts.stack ? opts.stack.map((g, i) => ({ type: 'bar', label: g.label, data: KEYS.map(m => sum(base.filter(l => l.maand === m && l.stage >= 4 && g.f(l)), l => l.waarde / (g.split ? l.items.length : 1))), backgroundColor: KEYS.map(m => on(m) ? PAL[i] : PAL[i] + '55'), borderRadius: 2, stack: 's' }))
+      : [{ type: 'bar', label: 'Omzet', data: byM.map(x => x.omzet), backgroundColor: KEYS.map(m => on(m) ? INK : GREY), borderRadius: 3, yAxisID: 'y' }, { type: 'line', label: 'Leads', data: byM.map(x => x.leads), borderColor: ACC, backgroundColor: ACC, tension: .35, pointRadius: KEYS.map(m => on(m) ? 3 : 0), borderWidth: 1.5, yAxisID: 'y1' }];
+    mk(id, { data: { labels: KEYS.map(mLabel), datasets: ds }, options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, onClick: (e, els) => { if (els.length) setFilter('maand', KEYS[els[0].index]); }, onHover: pointer, scales: { x: { ...xAxis(), stacked: !!opts.stack }, y: { ...yAxis(v => eurK(v)), stacked: !!opts.stack }, ...(opts.stack ? {} : { y1: { position: 'right', grid: { display: false }, border: { display: false }, ticks: { maxTicksLimit: 6 } } }) }, plugins: { legend: { display: true }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.dataset.label === 'Leads' ? c.raw : eur(c.raw)}` } } } } });
+  }
+
+  // ----- Overzicht -----
+  function pageOverzicht() {
+    const months = periodMonths(), pm = prevMonths(months); const base = filtered();
+    const cur = inMonths(base, months), prev = inMonths(base, pm); const s = stats(cur), p = stats(prev);
+    const snap = D.SNAPSHOTS.at(-1), snapPrev = D.SNAPSHOTS.at(-2); const list = ams();
+    const open = sum(list, am => snap.per[am].open), openPrev = sum(list, am => snapPrev.per[am].open);
+    const capAdv = role().eigen ? D.ADVISEURS.filter(a => a.id === role().adviseurId) : state.f.adviseur ? D.ADVISEURS.filter(a => a.id === state.f.adviseur) : state.f.regio ? D.ADVISEURS.filter(a => a.regio === state.f.regio) : D.ADVISEURS;
+    const cap = sum(capAdv, a => a.cap) * 4.33 * months.length;
+    return head('Overzicht', `${periodLabel(months)}${pm.length ? ` · vergeleken met ${periodLabel(pm)}` : ''}`) + `
+      <div class="hero">${cardhead('Omzet en leads per maand', 'Gesloten orders uit het bronsysteem, historisch vastgelegd', '<span class="hint">Klik op een maand om te selecteren</span>')}<div class="chart"><canvas id="hero"></canvas></div></div>
+      ${kpis([
+        kpi('Omzet', eurK(s.omzet), s.omzet, p.omzet),
+        kpi('Leads', num(s.leads), s.leads, p.leads),
+        kpi('Afspraken', num(s.afspraken), s.afspraken, p.afspraken),
+        kpi('Offertes', num(s.offertes), s.offertes, p.offertes),
+        kpi('Orders', num(s.orders), s.orders, p.orders),
+        kpi('Conversie', pct(s.conv, 1), s.conv, p.conv),
+        ...(role().marge ? [kpi('Marge', eurK(s.marge), s.marge, p.marge)] : []),
+        kpi('Open offertes', eurK(open), open, openPrev, { vs: 'vs. vorige week' }),
+        kpi('Bezetting', cap ? pct(s.afspraken / cap) : '–', s.afspraken / (cap || 1), p.afspraken / (cap || 1)),
+      ])}
+      <div class="row">
+        <div class="card c5">${cardhead('Funnel', 'Conversie per stap, verschil t.o.v. vorige periode')}${funnelHtml(cur, prev)}</div>
+        <div class="card c7">${cardhead('Uitval per stap, per leadsoort', 'Aandeel dat de volgende stap niet haalt')}<div class="chart"><canvas id="chUitval"></canvas></div></div>
+        ${breakdown('overzicht', cur, prev, months)}
+      </div>${records(cur)}`;
+  }
+  afterRender.overzicht = () => {
+    const months = periodMonths(); monthlyHero('hero', filtered(), months, {});
+    uitvalChart('chUitval', inMonths(filtered(), months));
   };
+  function uitvalChart(id, cur) {
+    const steps = ['Lead → afspraak', 'Afspraak → opname', 'Opname → offerte', 'Offerte → order'];
+    mk(id, { type: 'bar', data: { labels: steps, datasets: D.LEADSOORTEN.map((ls, i) => ({ label: ls, data: steps.map((_, si) => { const g = cur.filter(l => l.leadsoort === ls); const a = g.filter(l => l.stage >= si).length, b = g.filter(l => l.stage >= si + 1).length; return a ? +((1 - b / a) * 100).toFixed(1) : 0; }), backgroundColor: PAL[i], borderRadius: 2 })) }, options: { maintainAspectRatio: false, onClick: (e, els) => { if (els.length) setFilter('leadsoort', D.LEADSOORTEN[els[0].datasetIndex]); }, onHover: pointer, scales: { x: xAxis(), y: yAxis(v => v + '%') }, plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.raw}% uitval` } } } } });
+  }
 
   // ----- Sales -----
   function pageSales() {
-    const months = periodMonths(), pm = prevMonths(months);
-    const base = scoped();
-    const cur = applyFilters(inMonths(base, months)), prev = applyFilters(inMonths(base, pm));
-    const s = stats(cur), p = stats(prev);
-    const advOpts = D.ADVISEURS.map(a => ({ v: a.id, l: a.naam }));
-    const filters = periodeSelect() + sel('leadsoort', 'Leadsoort', D.LEADSOORTEN.map(x => ({ v: x, l: x }))) + (role().eigen ? '' : sel('adviseur', 'Adviseur', advOpts)) + sel('product', 'Product', D.PRODUCTEN.map(x => ({ v: x.naam, l: x.naam })));
-    const advs = role().eigen ? D.ADVISEURS.filter(a => a.id === role().adviseurId) : D.ADVISEURS;
-    const rows = advs.map(a => { const c = stats(cur.filter(l => l.adviseur === a.id)), pv = stats(prev.filter(l => l.adviseur === a.id)); const conv = c.afspraken ? c.offertes / c.afspraken : 0, convP = pv.afspraken ? pv.offertes / pv.afspraken : 0; return { a, c, pv, conv, convP, d: conv - convP }; }).sort((x, y) => y.c.omzet - x.c.omzet);
-    return head('Sales & commercie', 'Omzet, conversie en uitval. Filterbaar op periode, leadsoort, adviseur en product.', filters) + `
-      <div class="grid">
-        ${kpi('Leads', num(s.leads), s.leads, p.leads, { drill: { _dim: 'leadsoort' } })}${kpi('Offertes', num(s.offertes), s.offertes, p.offertes, { drill: { _dim: 'adviseur' } })}${kpi('Orders', num(s.orders), s.orders, p.orders, { drill: { _dim: 'product' } })}${kpi('Omzet', eurK(s.omzet), s.omzet, p.omzet, { drill: { _dim: 'product' } })}
-        <div class="card c5" style="grid-column: span 5"><h3>Funnel</h3><div class="sub">Conversie per stap t.o.v. vorige periode</div>${funnelHtml(cur, prev)}</div>
-        <div class="card c7" style="grid-column: span 7"><h3>Uitval per stap, per leadsoort</h3><div class="sub">Waar in de funnel haken leads af?</div><div class="chart"><canvas id="chUitval"></canvas></div></div>
-        <div class="card c12"><h3>Per adviseur</h3><div class="sub">Conversie afspraak → offerte is de stap die deze periode het meest beweegt</div>
-          <table><thead><tr><th>Adviseur</th><th>Regio</th><th class="num">Leads</th><th class="num">Afspraken</th><th class="num">Offertes</th><th class="num">Orders</th><th class="num">Omzet</th><th class="num">Afspraak → offerte</th><th class="num">Δ vs. vorige</th></tr></thead><tbody>
-          ${rows.map(r => `<tr class="drillrow" ${drillAttr({ adviseur: r.a.id })}><td><b>${r.a.naam}</b></td><td>${r.a.regio}</td><td class="num">${r.c.leads}</td><td class="num">${r.c.afspraken}</td><td class="num">${r.c.offertes}</td><td class="num">${r.c.orders}</td><td class="num">${eur(r.c.omzet)}</td><td class="num">${pct(r.conv)}</td><td class="num"><span class="tag ${r.d < -0.05 ? 'bad' : r.d > 0.05 ? 'good' : ''}">${pm.length ? `${r.d >= 0 ? '+' : ''}${(r.d * 100).toFixed(0)}pt` : '–'}</span></td></tr>`).join('')}
-          </tbody></table></div>
-        <div class="card c12"><h3>Omzet per leadsoort over tijd</h3><div class="sub">Laatste 13 maanden · ${role().eigen ? 'eigen leads' : 'alle adviseurs'}</div><div class="chart"><canvas id="chLeadsoort"></canvas></div></div>
-      </div>`;
+    const months = periodMonths(), pm = prevMonths(months); const base = filtered();
+    const cur = inMonths(base, months), prev = inMonths(base, pm); const s = stats(cur), p = stats(prev);
+    const c2o = s.afspraken ? s.offertes / s.afspraken : 0, c2oP = p.afspraken ? p.offertes / p.afspraken : 0;
+    const o2o = s.offertes ? s.orders / s.offertes : 0, o2oP = p.offertes ? p.orders / p.offertes : 0;
+    const gem = s.orders ? s.omzet / s.orders : 0, gemP = p.orders ? p.omzet / p.orders : 0;
+    return head('Sales', `${periodLabel(months)}${pm.length ? ` · vergeleken met ${periodLabel(pm)}` : ''}`) + `
+      <div class="hero">${cardhead('Omzet per maand, per leadsoort', 'Gesloten orders, gestapeld naar herkomst van de lead', '<span class="hint">Klik op een maand om te selecteren</span>')}<div class="chart"><canvas id="hero"></canvas></div></div>
+      ${kpis([
+        kpi('Leads', num(s.leads), s.leads, p.leads),
+        kpi('Afspraken', num(s.afspraken), s.afspraken, p.afspraken),
+        kpi('Offertes', num(s.offertes), s.offertes, p.offertes),
+        kpi('Orders', num(s.orders), s.orders, p.orders),
+        kpi('Afspraak → offerte', pct(c2o), c2o, c2oP),
+        kpi('Offerte → order', pct(o2o), o2o, o2oP),
+        kpi('Gem. orderwaarde', eurK(gem), gem, gemP),
+        kpi('Omzet', eurK(s.omzet), s.omzet, p.omzet),
+      ])}
+      <div class="row">
+        <div class="card c5">${cardhead('Funnel', 'Conversie per stap, verschil t.o.v. vorige periode')}${funnelHtml(cur, prev)}</div>
+        <div class="card c7">${cardhead('Uitval per stap, per leadsoort', 'Klik op een leadsoort om te filteren')}<div class="chart"><canvas id="chUitval"></canvas></div></div>
+        ${breakdown('sales', cur, prev, months)}
+      </div>${records(cur)}`;
   }
   afterRender.sales = () => {
-    const months = periodMonths(); const cur = applyFilters(inMonths(scoped(), months));
-    const steps = ['Lead → afspraak', 'Afspraak → opname', 'Opname → offerte', 'Offerte → order'];
-    mk('chUitval', { type: 'bar', data: { labels: steps, datasets: D.LEADSOORTEN.map((ls, i) => ({ label: ls, data: steps.map((_, si) => { const g = cur.filter(l => l.leadsoort === ls); const a = g.filter(l => l.stage >= si).length, b = g.filter(l => l.stage >= si + 1).length; return a ? +((1 - b / a) * 100).toFixed(1) : 0; }), backgroundColor: COLORS[i], borderRadius: 3 })) }, options: { maintainAspectRatio: false, scales: axis(v => v + '%'), plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.raw}% uitval` } } } } });
-    const base = applyFilters(scoped());
-    mk('chLeadsoort', { type: 'line', data: { labels: D.MAANDEN.map(m => m.label), datasets: D.LEADSOORTEN.map((ls, i) => ({ label: ls, data: D.MAANDEN.map(m => stats(base.filter(l => l.maand === m.key && l.leadsoort === ls)).omzet), borderColor: COLORS[i], backgroundColor: COLORS[i], tension: .3, pointRadius: 2 })) }, options: { maintainAspectRatio: false, scales: axis(v => eurK(v)), plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${eur(c.raw)}` } } } } });
+    const months = periodMonths();
+    monthlyHero('hero', filtered(), months, { stack: D.LEADSOORTEN.map(ls => ({ label: ls, f: l => l.leadsoort === ls })) });
+    uitvalChart('chUitval', inMonths(filtered(), months));
   };
 
-  // ----- Product -----
+  // ----- Producten -----
   function productGrowth() {
-    const keys = D.MAANDEN.map(m => m.key); const last3 = keys.slice(-3), prev3 = keys.slice(-6, -3);
+    const last3 = KEYS.slice(-3), prev3 = KEYS.slice(-6, -3);
     return D.PRODUCTEN.map(p => { const f = l => l.stage >= 4 && l.items.includes(p.naam); const a = sum(inMonths(D.LEADS, last3).filter(f), l => l.waarde / l.items.length), b = sum(inMonths(D.LEADS, prev3).filter(f), l => l.waarde / l.items.length); return { p, cur: a, prev: b, g: b ? (a - b) / b : 0 }; }).sort((x, y) => y.g - x.g);
   }
   function pageProduct() {
-    const months = periodMonths(), pm = prevMonths(months);
-    const cur = inMonths(D.LEADS, months).filter(l => l.stage >= 4), prev = inMonths(D.LEADS, pm).filter(l => l.stage >= 4);
-    const per = D.PRODUCTEN.map(p => { const f = l => l.items.includes(p.naam); const c = cur.filter(f), pv = prev.filter(f); const om = sum(c, l => l.waarde / l.items.length); return { p, n: c.length, omzet: om, prevOmzet: sum(pv, l => l.waarde / l.items.length), marge: om * p.marge }; }).sort((a, b) => b.omzet - a.omzet);
+    const months = periodMonths(), pm = prevMonths(months); const base = filtered();
+    const cur = inMonths(base, months).filter(l => l.stage >= 4), prev = inMonths(base, pm).filter(l => l.stage >= 4);
+    const per = D.PRODUCTEN.map(p => { const f = l => l.items.includes(p.naam); const c = cur.filter(f), pv = prev.filter(f); const om = sum(c, l => l.waarde / l.items.length); return { p, n: c.length, omzet: om, prevOmzet: sum(pv, l => l.waarde / l.items.length), marge: om * p.marge }; }).filter(x => x.n || !state.f.product).sort((a, b) => b.omzet - a.omzet);
     const combos = {}; cur.filter(l => l.items.length > 1).forEach(l => { const k = l.items.slice().sort().join(' + '); combos[k] = (combos[k] || 0) + 1; });
     const topCombos = Object.entries(combos).sort((a, b) => b[1] - a[1]).slice(0, 6);
-    const growth = productGrowth();
-    const m = role().marge;
-    return head('Productanalyse', 'Welke producten en combinaties verkopen goed, waar zitten de marges en hoe ontwikkelt dit zich?', periodeSelect()) + `
-      <div class="grid">
-        <div class="card c7" style="grid-column: span 7"><h3>Omzet per product</h3><div class="sub">Geselecteerde periode · aandeel in omzet</div><div class="chart"><canvas id="chProd"></canvas></div></div>
-        <div class="card c5" style="grid-column: span 5"><h3>Groei laatste 3 maanden</h3><div class="sub">T.o.v. de 3 maanden ervoor</div><table><thead><tr><th>Product</th><th class="num">Omzet</th><th class="num">Groei</th></tr></thead><tbody>${growth.map(g => `<tr class="drillrow" ${drillAttr({ product: g.p.naam })}><td>${g.p.naam}</td><td class="num">${eurK(g.cur)}</td><td class="num"><span class="tag ${g.g > 0.08 ? 'good' : g.g < -0.08 ? 'bad' : ''}">${g.g >= 0 ? '+' : ''}${pct(g.g, 0)}</span></td></tr>`).join('')}</tbody></table></div>
-        <div class="card c7" style="grid-column: span 7"><h3>Producttabel</h3><div class="sub">${m ? 'Inclusief marge (alleen zichtbaar voor Directie)' : 'Marges zijn niet zichtbaar voor jouw rol'}</div>
-          <table><thead><tr><th>Product</th><th class="num">Orders</th><th class="num">Omzet</th><th class="num">Δ</th>${m ? '<th class="num">Marge €</th><th class="num">Marge %</th>' : ''}</tr></thead><tbody>
-          ${per.map(x => `<tr class="drillrow" ${drillAttr({ product: x.p.naam })}><td><b>${x.p.naam}</b></td><td class="num">${x.n}</td><td class="num">${eur(x.omzet)}</td><td class="num">${delta(x.omzet, x.prevOmzet)}</td>${m ? `<td class="num">${eur(x.marge)}</td><td class="num">${pct(x.p.marge)}</td>` : ''}</tr>`).join('')}</tbody></table></div>
-        <div class="card c5" style="grid-column: span 5"><h3>Productcombinaties</h3><div class="sub">Meest verkochte combinaties in één order</div><table><thead><tr><th>Combinatie</th><th class="num">Orders</th></tr></thead><tbody>${topCombos.map(([k, n]) => `<tr><td>${k}</td><td class="num">${n} <span class="bar" style="width:${n / topCombos[0][1] * 60}px"></span></td></tr>`).join('')}</tbody></table></div>
-        <div class="card c12"><h3>Ontwikkeling per product</h3><div class="sub">Omzet per maand, laatste 13 maanden</div><div class="chart tall"><canvas id="chProdTrend"></canvas></div></div>
+    const tot = sum(per, x => x.omzet), totP = sum(per, x => x.prevOmzet); const m = role().marge; const max = Math.max(1, ...per.map(x => x.omzet));
+    const multi = cur.length ? cur.filter(l => l.items.length > 1).length / cur.length : 0, multiP = prev.length ? prev.filter(l => l.items.length > 1).length / prev.length : 0;
+    return head('Producten', `${periodLabel(months)}${pm.length ? ` · vergeleken met ${periodLabel(pm)}` : ''}`) + `
+      <div class="hero">${cardhead('Omzet per maand, per product', 'Orderwaarde verdeeld over de producten in de order', '<span class="hint">Klik op een maand om te selecteren</span>')}<div class="chart"><canvas id="hero"></canvas></div></div>
+      ${kpis([
+        kpi('Omzet', eurK(tot), tot, totP),
+        kpi('Orders', num(cur.length), cur.length, prev.length),
+        kpi('Gem. orderwaarde', eurK(cur.length ? sum(cur, l => l.waarde) / cur.length : 0), cur.length ? sum(cur, l => l.waarde) / cur.length : 0, prev.length ? sum(prev, l => l.waarde) / prev.length : 0),
+        kpi('Orders met 2 producten', pct(multi), multi, multiP),
+        ...(m ? [kpi('Marge', eurK(sum(per, x => x.marge)), sum(per, x => x.marge), sum(per, x => x.prevOmzet * x.p.marge)), kpi('Marge %', tot ? pct(sum(per, x => x.marge) / tot, 1) : '–', tot ? sum(per, x => x.marge) / tot : 0, totP ? sum(per, x => x.prevOmzet * x.p.marge) / totP : 0)] : []),
+      ])}
+      <div class="row">
+        <div class="card c7">${cardhead('Per product', m ? 'Klik op een product om te filteren · marge alleen zichtbaar voor Directie' : 'Klik op een product om te filteren')}
+          <table><thead><tr><th>Product</th><th class="num">Orders</th><th class="num">Omzet</th><th class="num">Aandeel</th>${m ? '<th class="num">Marge</th><th class="num">Marge %</th>' : ''}<th class="num">Δ omzet</th></tr></thead><tbody>
+          ${per.map(x => { return `<tr class="drillrow" data-set="product" data-val="${x.p.naam}"><td>${x.p.naam}</td><td class="num">${x.n}</td><td class="num">${eur(x.omzet)}<span class="bar" style="width:${x.omzet / max * 56}px"></span></td><td class="num">${tot ? pct(x.omzet / tot) : '–'}</td>${m ? `<td class="num">${eur(x.marge)}</td><td class="num">${pct(x.p.marge)}</td>` : ''}<td class="num">${dtxt(x.omzet, x.prevOmzet)}</td></tr>`; }).join('')}</tbody></table></div>
+        <div class="card c5">${cardhead('Productcombinaties', 'Meest verkochte combinaties in één order')}<table><thead><tr><th>Combinatie</th><th class="num">Orders</th></tr></thead><tbody>${topCombos.length ? topCombos.map(([k, n]) => `<tr><td>${k}</td><td class="num">${n}<span class="bar" style="width:${n / topCombos[0][1] * 56}px"></span></td></tr>`).join('') : '<tr><td colspan="2" class="dim">Geen combinaties in deze selectie</td></tr>'}</tbody></table></div>
+        ${breakdown('product', inMonths(base, months), inMonths(base, pm), months)}
       </div>`;
   }
   afterRender.product = () => {
-    const months = periodMonths(); const cur = inMonths(D.LEADS, months).filter(l => l.stage >= 4);
-    const per = D.PRODUCTEN.map(p => ({ p, omzet: sum(cur.filter(l => l.items.includes(p.naam)), l => l.waarde / l.items.length) })).sort((a, b) => b.omzet - a.omzet);
-    mk('chProd', { type: 'bar', data: { labels: per.map(x => x.p.naam), datasets: [{ data: per.map(x => x.omzet), backgroundColor: per.map((_, i) => i === 0 ? COLORS[0] : '#9db4ff'), borderRadius: 4 }] }, options: { indexAxis: 'y', maintainAspectRatio: false, onClick: (e, els) => { if (els.length) openDrill({ product: per[els[0].index].p.naam }); }, onHover: (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => eur(c.raw) } } }, scales: { x: { grid: { color: '#f0f1f3' }, border: { display: false }, ticks: { callback: v => eurK(v) } }, y: { grid: { display: false } } } } });
-    const top = D.PRODUCTEN.slice().sort((a, b) => b.w - a.w).slice(0, 6);
-    mk('chProdTrend', { type: 'line', data: { labels: D.MAANDEN.map(m => m.label), datasets: top.map((p, i) => ({ label: p.naam, data: D.MAANDEN.map(m => sum(D.LEADS.filter(l => l.maand === m.key && l.stage >= 4 && l.items.includes(p.naam)), l => l.waarde / l.items.length)), borderColor: COLORS[i], backgroundColor: COLORS[i], tension: .3, pointRadius: 2 })) }, options: { maintainAspectRatio: false, scales: axis(v => eurK(v)), plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${eur(c.raw)}` } } } } });
+    const months = periodMonths(); const top = D.PRODUCTEN.slice().sort((a, b) => b.w - a.w);
+    monthlyHero('hero', filtered(), months, { stack: top.map(p => ({ label: p.naam, f: l => l.items.includes(p.naam), split: true })) });
   };
 
   // ----- Regio -----
   function regioRows(months) {
-    const cur = inMonths(D.LEADS, months);
-    return D.REGIOS.map(r => { const g = cur.filter(l => l.regio === r.naam); const s = stats(g); const cap = regioCap(r.naam) * months.length; const advs = D.ADVISEURS.filter(a => a.regio === r.naam).length; return { r, s, cap, advs, ratio: cap ? s.leads / cap : Infinity, bez: cap ? s.afspraken / cap : Infinity }; });
+    const cur = inMonths(filtered(), months);
+    return D.REGIOS.map(r => { const g = cur.filter(l => l.regio === r.naam); const s = stats(g); const cap = regioCap(r.naam) * months.length; const advs = D.ADVISEURS.filter(a => a.regio === r.naam).length; return { r, s, cap, advs, ratio: cap ? s.leads / cap : Infinity }; });
   }
-  const ratioColor = x => x === Infinity ? '#7a1f1f' : x > 1.3 ? '#d23c3c' : x > 0.9 ? '#e8892b' : x > 0.6 ? '#1f5eff' : '#7c9cf5';
+  const ratioColor = x => x === Infinity ? '#111318' : x > 1.3 ? '#d92d20' : x > 0.9 ? '#e8892b' : x > 0.6 ? '#2457e6' : '#9fb3f0';
   function pageRegio() {
-    const months = periodMonths(); const rows = regioRows(months).sort((a, b) => b.ratio - a.ratio);
-    return head('Regionale analyse', 'Leads, verkopen en conversie geografisch afgezet tegen de capaciteit van adviseurs.', periodeSelect()) + `
-      <div class="grid">
-        <div class="card c5" style="grid-column: span 5"><h3>Vraag versus capaciteit</h3><div class="sub">Leads per beschikbaar afspraakslot, per provincie</div>
-          <div class="tiles">${D.REGIOS.map(r => { const x = rows.find(q => q.r.naam === r.naam); return `<div class="tile" ${drillAttr({ regio: r.naam })} style="grid-column:${r.col + 1};grid-row:${r.row + 1};background:${ratioColor(x.ratio)}" title="${r.naam}: ${x.s.leads} leads, capaciteit ${Math.round(x.cap)} slots"><b>${r.naam}</b><small>${x.s.leads} leads · ${x.advs ? x.ratio.toFixed(2) : 'geen adviseur'}</small></div>`; }).join('')}</div>
-          <div class="legend"><span><i style="background:#7c9cf5"></i>ruimte</span><span><i style="background:#1f5eff"></i>in balans</span><span><i style="background:#e8892b"></i>krap</span><span><i style="background:#d23c3c"></i>tekort</span><span><i style="background:#7a1f1f"></i>geen eigen adviseur</span></div></div>
-        <div class="card c7" style="grid-column: span 7"><h3>Leads en capaciteit per regio</h3><div class="sub">Regio's zonder eigen adviseur worden op afstand bediend: lagere conversie, langere doorlooptijd</div><div class="chart tall"><canvas id="chRegio"></canvas></div></div>
-        <div class="card c12"><h3>Regiotabel</h3><div class="sub">Gesorteerd op druk (leads per slot)</div>
-          <table><thead><tr><th>Regio</th><th class="num">Leads</th><th class="num">Afspraken</th><th class="num">Orders</th><th class="num">Conversie</th><th class="num">Omzet</th><th class="num">Adviseurs</th><th class="num">Capaciteit</th><th class="num">Leads / slot</th><th>Status</th></tr></thead><tbody>
-          ${rows.map(x => `<tr class="drillrow" ${drillAttr({ regio: x.r.naam })}><td><b>${x.r.naam}</b></td><td class="num">${x.s.leads}</td><td class="num">${x.s.afspraken}</td><td class="num">${x.s.orders}</td><td class="num">${pct(x.s.conv, 1)}</td><td class="num">${eur(x.s.omzet)}</td><td class="num">${x.advs}</td><td class="num">${x.cap ? Math.round(x.cap) : '–'}</td><td class="num">${x.cap ? x.ratio.toFixed(2) : '∞'}</td><td>${x.cap === 0 ? '<span class="tag bad">geen eigen adviseur</span>' : x.ratio > 1.3 ? '<span class="tag bad">tekort</span>' : x.ratio > 0.9 ? '<span class="tag warn">krap</span>' : '<span class="tag good">in balans</span>'}</td></tr>`).join('')}</tbody></table></div>
+    const months = periodMonths(), pm = prevMonths(months); const rows = regioRows(months).sort((a, b) => b.ratio - a.ratio);
+    const cur = inMonths(filtered(), months), prev = inMonths(filtered(), pm); const s = stats(cur), p = stats(prev);
+    const none = rows.filter(x => x.cap === 0); const ext = cur.filter(l => l.extern);
+    return head('Regio', `${periodLabel(months)} · leads, verkopen en conversie tegenover de capaciteit van adviseurs`) + `
+      <div class="hero">${cardhead('Leads, capaciteit en orders per regio', 'Capaciteit = beschikbare afspraakslots van adviseurs in de regio', '<span class="hint">Klik op een regio om te filteren</span>')}<div class="chart"><canvas id="hero"></canvas></div></div>
+      ${kpis([
+        kpi('Leads', num(s.leads), s.leads, p.leads),
+        kpi('Afspraken', num(s.afspraken), s.afspraken, p.afspraken),
+        kpi('Orders', num(s.orders), s.orders, p.orders),
+        kpi('Conversie', pct(s.conv, 1), s.conv, p.conv),
+        kpi('Regio\'s zonder adviseur', String(none.length), none.length, none.length),
+        kpi('Leads op afstand bediend', pct(cur.length ? ext.length / cur.length : 0), ext.length / (cur.length || 1), prev.filter(l => l.extern).length / (prev.length || 1)),
+      ])}
+      <div class="row">
+        <div class="card c4">${cardhead('Vraag versus capaciteit', 'Leads per beschikbaar afspraakslot')}
+          <div class="tiles">${D.REGIOS.map(r => { const x = rows.find(q => q.r.naam === r.naam); return `<div class="tile" data-set="regio" data-val="${r.naam}" style="grid-column:${r.col + 1};grid-row:${r.row + 1};background:${ratioColor(x.ratio)}"><b>${r.naam}</b><small>${x.s.leads} · ${x.advs ? x.ratio.toFixed(2) : 'geen adviseur'}</small></div>`; }).join('')}</div>
+          <div class="legend"><span><i style="background:#9fb3f0"></i>ruimte</span><span><i style="background:#2457e6"></i>in balans</span><span><i style="background:#e8892b"></i>krap</span><span><i style="background:#d92d20"></i>tekort</span><span><i style="background:#111318"></i>geen eigen adviseur</span></div></div>
+        <div class="card c8">${cardhead('Per regio', 'Gesorteerd op druk · klik op een regio om te filteren')}
+          <table><thead><tr><th>Regio</th><th class="num">Leads</th><th class="num">Afspraken</th><th class="num">Orders</th><th class="num">Conversie</th><th class="num">Omzet</th><th class="num">Adviseurs</th><th class="num">Capaciteit</th><th class="num">Leads / slot</th><th></th></tr></thead><tbody>
+          ${rows.map(x => `<tr class="drillrow" data-set="regio" data-val="${x.r.naam}"><td>${x.r.naam}</td><td class="num">${x.s.leads}</td><td class="num">${x.s.afspraken}</td><td class="num">${x.s.orders}</td><td class="num">${pct(x.s.conv, 1)}</td><td class="num">${eur(x.s.omzet)}</td><td class="num">${x.advs}</td><td class="num">${x.cap ? Math.round(x.cap) : '–'}</td><td class="num">${x.cap ? x.ratio.toFixed(2) : '∞'}</td><td>${x.cap === 0 ? '<span class="tag">geen eigen adviseur</span>' : x.ratio > 1.3 ? '<span class="tag bad">tekort</span>' : x.ratio > 0.9 ? '<span class="tag warn">krap</span>' : '<span class="tag good">in balans</span>'}</td></tr>`).join('')}</tbody></table></div>
+        ${breakdown('regio', cur, prev, months)}
       </div>`;
   }
   afterRender.regio = () => {
     const rows = regioRows(periodMonths()).sort((a, b) => b.s.leads - a.s.leads);
-    mk('chRegio', { type: 'bar', data: { labels: rows.map(x => x.r.naam), datasets: [{ label: 'Leads', data: rows.map(x => x.s.leads), backgroundColor: COLORS[0], borderRadius: 3 }, { label: 'Capaciteit (slots)', data: rows.map(x => Math.round(x.cap)), backgroundColor: '#d9dde6', borderRadius: 3 }, { label: 'Orders', data: rows.map(x => x.s.orders), backgroundColor: COLORS[2], borderRadius: 3 }] }, options: { maintainAspectRatio: false, onClick: (e, els) => { if (els.length) openDrill({ regio: rows[els[0].index].r.naam }); }, onHover: (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; }, scales: axis() } });
+    mk('hero', { type: 'bar', data: { labels: rows.map(x => x.r.naam), datasets: [{ label: 'Leads', data: rows.map(x => x.s.leads), backgroundColor: INK, borderRadius: 3 }, { label: 'Capaciteit (slots)', data: rows.map(x => Math.round(x.cap)), backgroundColor: GREY, borderRadius: 3 }, { label: 'Orders', data: rows.map(x => x.s.orders), backgroundColor: ACC, borderRadius: 3 }] }, options: { maintainAspectRatio: false, onClick: (e, els) => { if (els.length) setFilter('regio', rows[els[0].index].r.naam); }, onHover: pointer, scales: { x: xAxis(), y: yAxis() } } });
   };
 
   // ----- Pipeline -----
-  const ams = () => role().eigen ? [role().naam] : D.ACCOUNTMANAGERS;
+  const ams = () => { if (role().eigen) return [role().naam]; if (state.f.adviseur && D.ACCOUNTMANAGERS.includes(advNaam(state.f.adviseur))) return [advNaam(state.f.adviseur)]; return D.ACCOUNTMANAGERS; };
   function pagePipeline() {
-    const list = ams(); const S = D.SNAPSHOTS; const last = S.at(-1), prev = S.at(-2);
-    const tot = s => sum(list, am => s.per[am].open);
-    const mut = k => sum(list, am => last.per[am][k]);
-    const first = S[0];
-    return head('Pipeline-ontwikkeling', 'Niet alleen de huidige stand, maar de ontwikkeling door de tijd: wekelijkse snapshots van de offerteportefeuille.') + `
-      <div class="grid">
-        ${kpi('Openstaande offertes', eurK(tot(last)), tot(last), tot(prev), { vs: 'vorige week' })}
-        ${kpi('Nieuw deze week', eurK(mut('nieuw')), mut('nieuw'), sum(list, am => prev.per[am].nieuw), { vs: 'vorige week' })}
-        ${kpi('Gewonnen deze week', eurK(mut('gewonnen')), mut('gewonnen'), sum(list, am => prev.per[am].gewonnen), { vs: 'vorige week' })}
-        ${kpi('Verloren deze week', eurK(mut('verloren')), mut('verloren'), sum(list, am => prev.per[am].verloren), { vs: 'vorige week', invert: true })}
-        <div class="card c8"><h3>Portefeuille over 26 weken</h3><div class="sub">Snapshots opgeslagen in de reporting-database · het bronsysteem toont alleen de huidige stand</div><div class="chart tall"><canvas id="chPipe"></canvas></div></div>
-        <div class="card c4"><h3>Mutaties deze week</h3><div class="sub">Van ${prev.label} naar ${last.label}</div><div class="chart tall"><canvas id="chWater"></canvas></div></div>
-        <div class="card c12"><h3>Per accountmanager</h3><div class="sub">Mutaties in de laatste week · start ${eurK(tot(first))} op ${first.label}</div>
-          <table><thead><tr><th>Accountmanager</th><th class="num">Open (vorige week)</th><th class="num">+ Nieuw</th><th class="num">− Gewonnen</th><th class="num">− Verloren</th><th class="num">± Gemuteerd</th><th class="num">Open (nu)</th><th class="num">Δ week</th></tr></thead><tbody>
-          ${list.map(am => { const l = last.per[am], p = prev.per[am]; const d = l.open - p.open; return `<tr><td><b>${am}</b></td><td class="num">${eur(p.open)}</td><td class="num">${eur(l.nieuw)}</td><td class="num">${eur(l.gewonnen)}</td><td class="num" style="${l.verloren > 150000 ? 'color:var(--bad);font-weight:600' : ''}">${eur(l.verloren)}</td><td class="num">${eur(l.gemuteerd)}</td><td class="num">${eur(l.open)}</td><td class="num"><span class="tag ${d < -100000 ? 'bad' : d > 50000 ? 'good' : ''}">${d >= 0 ? '+' : '−'}${eurK(Math.abs(d))}</span></td></tr>`; }).join('')}</tbody></table></div>
+    const list = ams(); const S = D.SNAPSHOTS; const last = S.at(-1), prev = S.at(-2), first = S[0];
+    const tot = s => sum(list, am => s.per[am].open); const mut = (s, k) => sum(list, am => s.per[am][k]);
+    const avgV = sum(S.slice(-9, -1), s => mut(s, 'verloren')) / 8;
+    return head('Pipeline', `Wekelijkse snapshots van de offerteportefeuille · ${first.label} – ${last.label} · periode- en productfilters gelden hier niet`) + `
+      <div class="hero">${cardhead('Openstaande offertes per accountmanager', 'Het bronsysteem toont alleen de huidige stand; de reporting-database bewaart de historie')}<div class="chart"><canvas id="hero"></canvas></div></div>
+      ${kpis([
+        kpi('Open offertes', eurK(tot(last)), tot(last), tot(prev), { vs: 'vs. vorige week' }),
+        kpi('Nieuw', eurK(mut(last, 'nieuw')), mut(last, 'nieuw'), mut(prev, 'nieuw'), { vs: 'vs. vorige week' }),
+        kpi('Gewonnen', eurK(mut(last, 'gewonnen')), mut(last, 'gewonnen'), mut(prev, 'gewonnen'), { vs: 'vs. vorige week' }),
+        kpi('Verloren', eurK(mut(last, 'verloren')), mut(last, 'verloren'), avgV, { vs: 'vs. gem. 8 weken', invert: true }),
+        kpi('Gemuteerd', eurK(mut(last, 'gemuteerd')), 0, 0, { vs: 'waardewijzigingen op open offertes' }),
+        kpi('Groei 26 weken', dtxt(tot(last), tot(first)).replace(/<[^>]+>/g, ''), tot(last), tot(first), { vs: `sinds ${first.label}` }),
+      ])}
+      <div class="row">
+        <div class="card c4">${cardhead('Mutaties deze week', `${prev.label} → ${last.label}`)}<div class="chart"><canvas id="chWater"></canvas></div></div>
+        <div class="card c8">${cardhead('Per accountmanager', 'Mutaties in de laatste week · klik om te filteren')}
+          <table><thead><tr><th>Accountmanager</th><th class="num">Open vorige week</th><th class="num">Nieuw</th><th class="num">Gewonnen</th><th class="num">Verloren</th><th class="num">Gemuteerd</th><th class="num">Open nu</th><th class="num">Δ week</th></tr></thead><tbody>
+          ${list.map(am => { const l = last.per[am], p = prev.per[am]; const d = l.open - p.open; const adv = D.ADVISEURS.find(a => a.naam === am); return `<tr class="${adv && !role().eigen ? 'drillrow' : ''}" data-set="adviseur" data-val="${adv ? adv.id : ''}"><td>${am}</td><td class="num">${eur(p.open)}</td><td class="num">${eur(l.nieuw)}</td><td class="num">${eur(l.gewonnen)}</td><td class="num ${l.verloren > 150000 ? 'neg' : ''}">${eur(l.verloren)}</td><td class="num">${eur(l.gemuteerd)}</td><td class="num">${eur(l.open)}</td><td class="num ${d < -100000 ? 'neg' : d > 50000 ? 'pos' : 'dim'}">${d >= 0 ? '+' : '−'}${eurK(Math.abs(d))}</td></tr>`; }).join('')}</tbody></table></div>
       </div>`;
   }
   afterRender.pipeline = () => {
     const list = ams(); const S = D.SNAPSHOTS;
-    mk('chPipe', { type: 'line', data: { labels: S.map(s => s.label), datasets: list.map((am, i) => ({ label: am, data: S.map(s => s.per[am].open), borderColor: COLORS[i], backgroundColor: COLORS[i] + '22', fill: true, tension: .3, pointRadius: 0, stack: 'a' })) }, options: { maintainAspectRatio: false, interaction: { mode: 'index' }, scales: { x: { grid: { display: false } }, y: { stacked: true, grid: { color: '#f0f1f3' }, border: { display: false }, ticks: { callback: v => eurK(v) } } }, plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${eur(c.raw)}` } } } } });
+    mk('hero', { type: 'line', data: { labels: S.map(s => s.label), datasets: list.map((am, i) => ({ label: am, data: S.map(s => s.per[am].open), borderColor: PAL[i], backgroundColor: PAL[i] + '1f', fill: true, tension: .3, pointRadius: 0, borderWidth: 1.5 })) }, options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: xAxis(), y: { ...yAxis(v => eurK(v)), stacked: true } }, plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${eur(c.raw)}` } } } } });
     const last = S.at(-1), prev = S.at(-2); const t = k => sum(list, am => last.per[am][k]); const start = sum(list, am => prev.per[am].open);
-    let run = start; const steps = [['Start', [0, start], '#8a8f9c']]; [['Nieuw', t('nieuw'), COLORS[2]], ['Gewonnen', -t('gewonnen'), COLORS[0]], ['Verloren', -t('verloren'), COLORS[4]], ['Gemuteerd', t('gemuteerd'), COLORS[3]]].forEach(([l, v, c]) => { steps.push([l, [run, run + v], c]); run += v; }); steps.push(['Eind', [0, run], '#14171f']);
-    mk('chWater', { type: 'bar', data: { labels: steps.map(s => s[0]), datasets: [{ data: steps.map(s => s[1]), backgroundColor: steps.map(s => s[2]), borderRadius: 3 }] }, options: { maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => eur(c.raw[1] - c.raw[0]) } } }, scales: { x: { grid: { display: false } }, y: { min: Math.floor(start * 0.8 / 1e5) * 1e5, grid: { color: '#f0f1f3' }, border: { display: false }, ticks: { callback: v => eurK(v) } } } } });
+    let run = start; const steps = [['Start', [0, start], GREY]]; [['Nieuw', t('nieuw'), ACC], ['Gewonnen', -t('gewonnen'), '#9fb3f0'], ['Verloren', -t('verloren'), '#d92d20'], ['Gemuteerd', t('gemuteerd'), '#8a94a6']].forEach(([l, v, c]) => { steps.push([l, [run, run + v], c]); run += v; }); steps.push(['Eind', [0, run], INK]);
+    mk('chWater', { type: 'bar', data: { labels: steps.map(s => s[0]), datasets: [{ data: steps.map(s => s[1]), backgroundColor: steps.map(s => s[2]), borderRadius: 3 }] }, options: { maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => eur(c.raw[1] - c.raw[0]) } } }, scales: { x: xAxis(), y: yAxis(v => eurK(v), { min: Math.floor(start * 0.8 / 1e5) * 1e5 }) } } });
   };
 
   // ----- Opzet -----
   function pageOpzet() {
     return head('Technische opzet', 'Een beperkte extra laag bovenop de bestaande infrastructuur. Bestaande systemen blijven bestaan.') + `
-      <div class="grid">
-        <div class="card c12"><h3>Dataflow</h3><div class="sub">Bronsysteem → reporting-datalaag → dashboard / CoPilot</div>
-          <div class="arch">
-            <div class="node"><b>CRM / bronsysteem</b>Bestaande API's als primaire databron. Leads, afspraken, offertes, orders, adviseurs.</div>
-            <div class="node"><b>Reporting-database</b>Azure · historische snapshots (wekelijks), afgeleide KPI's, aanvullende analyse-data.</div>
-            <div class="node"><b>Webapplicatie</b>Dashboards, filters, drilldowns. Pagina-niveau rechten op basis van rol.</div>
-            <div class="node"><b>Microsoft 365 / Okta</b>Login, rollen en autorisatie. Eén set rechten voor dashboard én CoPilot.</div>
-            <div class="node"><b>CoPilot-interface</b>Gestandaardiseerde vragen op vooraf gedefinieerde datasets. Geen vrije databasetoegang.</div>
-          </div></div>
-        <div class="card c6"><h3>Rollen en zichtbaarheid</h3><div class="sub">Bestaande M365-groepen bepalen welke dashboards, datasets en analyses iemand mag benaderen. Wissel de rol rechtsboven om dit te zien.</div>
+      <div class="card">${cardhead('Dataflow', 'Bronsysteem → reporting-datalaag → dashboard / CoPilot')}
+        <div class="arch">
+          <div class="node"><b>CRM / bronsysteem</b>Bestaande API's als primaire databron. Leads, afspraken, offertes, orders, adviseurs.</div>
+          <div class="node"><b>Reporting-database</b>Azure · wekelijkse snapshots, afgeleide KPI's, aanvullende analyse-data.</div>
+          <div class="node"><b>Webapplicatie</b>Dashboards, filters, drilldowns. Rechten op pagina- en datasetniveau.</div>
+          <div class="node"><b>Microsoft 365 / Okta</b>Login, rollen en autorisatie. Eén set rechten voor dashboard én CoPilot.</div>
+          <div class="node"><b>CoPilot-interface</b>Vragen op vooraf gedefinieerde datasets. Geen vrije databasetoegang.</div>
+        </div></div>
+      <div class="row">
+        <div class="card c6">${cardhead('Rollen en zichtbaarheid', 'Wissel de rol rechtsboven om dit te zien')}
           <table><thead><tr><th>Onderdeel</th><th>Directie</th><th>Salesmanager</th><th>Adviseur</th></tr></thead><tbody>
-          ${[['Management dashboard', 1, 0, 0], ['Sales & commercie', 1, 1, 'eigen'], ['Productanalyse (incl. marge)', 1, 'zonder marge', 0], ['Regionale analyse', 1, 1, 0], ['Pipeline-ontwikkeling', 1, 1, 'eigen'], ['CoPilot-datasets', 5, 5, 3]].map(r => `<tr><td>${r[0]}</td>${r.slice(1).map(v => `<td>${v === 1 ? '<span class="tag good">✓</span>' : v === 0 ? '<span class="tag bad">–</span>' : `<span class="tag warn">${v}</span>`}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
-        <div class="card c6"><h3>Vooraf gedefinieerde datasets voor CoPilot</h3><div class="sub">CoPilot vertaalt een vraag naar één van deze datasets, voert de analyse uit en antwoordt met dezelfde definities als het dashboard.</div>
+          ${[['Overzicht', 1, 1, 'eigen'], ['Sales', 1, 1, 'eigen'], ['Producten (incl. marge)', 1, 'zonder marge', 0], ['Regio', 1, 1, 0], ['Pipeline', 1, 1, 'eigen'], ['CoPilot-datasets', 5, 5, 3]].map(r => `<tr><td>${r[0]}</td>${r.slice(1).map(v => `<td>${v === 1 ? '<span class="tag good">✓</span>' : v === 0 ? '<span class="tag">–</span>' : `<span class="tag warn">${v}</span>`}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+        <div class="card c6">${cardhead('Vooraf gedefinieerde datasets voor CoPilot', 'Een vraag wordt vertaald naar één dataset en beantwoord met dezelfde definities als het dashboard')}
           <table><thead><tr><th>Dataset</th><th>Beantwoordt</th></tr></thead><tbody>
             <tr><td><code>omzet-funnel</code></td><td>Waar in de funnel verandert omzet of conversie?</td></tr>
             <tr><td><code>adviseur-conversie</code></td><td>Welke adviseurs stijgen of dalen per funnelstap?</td></tr>
             <tr><td><code>regio-capaciteit</code></td><td>Waar past de vraag niet bij de capaciteit?</td></tr>
             <tr><td><code>product-groei</code></td><td>Welke producten en combinaties groeien of krimpen?</td></tr>
             <tr><td><code>pipeline-mutaties</code></td><td>Waarom beweegt de portefeuille, en bij wie?</td></tr>
-          </tbody></table>
-          <p class="hint" style="margin:12px 0 0">Definities, rechten en bedrijfslogica blijven centraal beheerd. Een vraag buiten deze datasets wordt netjes geweigerd, niet vrij geïnterpreteerd.</p></div>
-        <div class="card c12"><h3>Waarom dit sneller kan</h3><div class="sub">AI-assisted maatwerk verandert de business case</div>
-          <div class="grid" style="grid-template-columns:repeat(3,1fr)">
-            <div><b>Weken in plaats van maanden</b><p class="hint">Mens ontwerpt het systeem, prompt, controleert en deployt. Het model bouwt. IT doet een audit.</p></div>
-            <div><b>In eigen beheer</b><p class="hint">Geen externe bouwpartij. Historie en definities staan in de eigen Azure-omgeving.</p></div>
-            <div><b>Eén omgeving, één rechtenset</b><p class="hint">Geen rapport-niveau rechten zoals bij losse BI-tools, maar pagina- en datasetniveau, voor mens én CoPilot.</p></div>
-          </div></div>
+          </tbody></table></div>
+        <div class="card c12">${cardhead('Waarom dit sneller kan', 'AI-assisted maatwerk verandert de business case')}
+          <div class="row" style="margin-top:0"><div class="c4"><b>Weken in plaats van maanden</b><p class="hint">Mens ontwerpt het systeem, prompt, controleert en deployt. Het model bouwt. IT doet een audit.</p></div><div class="c4"><b>In eigen beheer</b><p class="hint">Geen externe bouwpartij. Historie en definities staan in de eigen Azure-omgeving.</p></div><div class="c4"><b>Eén omgeving, één rechtenset</b><p class="hint">Geen rapport-niveau rechten zoals bij losse BI-tools, maar pagina- en datasetniveau, voor mens én CoPilot.</p></div></div></div>
       </div>`;
-  }
-
-
-  // ---------- Drilldown ----------
-  const DIMS = { adviseur: 'Adviseur', product: 'Product', regio: 'Regio', leadsoort: 'Leadsoort', maand: 'Maand' };
-  const dimLabel = (k, v) => k === 'adviseur' ? advNaam(v) : k === 'maand' ? mLabel(v) : v;
-  let drillStack = [];
-  const ctxFilter = (leads, ctx) => leads.filter(l => Object.entries(ctx).every(([k, v]) => k === 'product' ? l.items.includes(v) : l[k] === v));
-  const drillAttr = ctx => `data-drill='${JSON.stringify(ctx).replace(/'/g, '&#39;')}'`;
-  function openDrill(ctx, push = true) {
-    if (role().eigen && ctx.adviseur && ctx.adviseur !== role().adviseurId) return;
-    if (push) drillStack.push(ctx); else drillStack[drillStack.length - 1] = ctx;
-    renderDrill();
-  }
-  function closeDrill() { drillStack = []; $('#drill').hidden = true; $('#drillBack').hidden = true; charts.filter(c => c.canvas.closest('#drill')).forEach(c => c.destroy()); charts = charts.filter(c => !c.canvas.closest('#drill')); }
-  function renderDrill() {
-    charts.filter(c => c.canvas.closest('#drill')).forEach(c => c.destroy()); charts = charts.filter(c => !c.canvas.closest('#drill'));
-    const ctx = drillStack.at(-1); const dim = ctx._dim || Object.keys(DIMS).find(k => !(k in ctx));
-    const months = ctx.maand ? [ctx.maand] : periodMonths(); const pm = prevMonths(months);
-    const base = ctxFilter(applyFilters(scoped()), Object.fromEntries(Object.entries(ctx).filter(([k]) => k !== 'maand' && k !== '_dim')));
-    const cur = inMonths(base, months), prev = inMonths(base, pm); const s = stats(cur), p = stats(prev);
-    const crumbs = drillStack.map((c, i) => `<button class="crumb ${i === drillStack.length - 1 ? 'on' : ''}" data-crumb="${i}">${Object.entries(c).filter(([k]) => k !== '_dim').map(([k, v]) => dimLabel(k, v)).join(' · ') || 'Alles'}</button>`).join('<span class="crumb-sep">›</span>');
-    const title = Object.entries(ctx).filter(([k]) => k !== '_dim').map(([k, v]) => dimLabel(k, v)).join(' · ') || 'Totaal';
-    const rows = Object.entries(groupBy(cur, l => dim === 'product' ? l.items[0] : l[dim])).map(([k, g]) => ({ k, s: stats(g), p: stats(prev.filter(l => (dim === 'product' ? l.items[0] : l[dim]) === k)) })).sort((a, b) => dim === 'maand' ? a.k.localeCompare(b.k) : b.s.omzet - a.s.omzet);
-    const recs = cur.slice().sort((a, b) => b.stage - a.stage || b.waarde - a.waarde).slice(0, 40);
-    const stageTag = st => `<span class="tag ${st >= 4 ? 'good' : st === 3 ? 'warn' : ''}">${D.STAGES[st]}</span>`;
-    $('#drillBody').innerHTML = `
-      <div class="crumbs">${crumbs}</div>
-      <h2>${title}</h2><p class="hint">${months.length === 1 ? mLabel(months[0]) : `${mLabel(months[0])} t/m ${mLabel(months.at(-1))}`} · ${num(cur.length)} leads${pm.length ? ` · vergeleken met ${months.length === 1 ? mLabel(pm[0]) : `${mLabel(pm[0])} t/m ${mLabel(pm.at(-1))}`}` : ''}</p>
-      <div class="dkpis">
-        <div><span>Leads</span><b>${num(s.leads)}</b>${delta(s.leads, p.leads)}</div>
-        <div><span>Offertes</span><b>${num(s.offertes)}</b>${delta(s.offertes, p.offertes)}</div>
-        <div><span>Orders</span><b>${num(s.orders)}</b>${delta(s.orders, p.orders)}</div>
-        <div><span>Omzet</span><b>${eurK(s.omzet)}</b>${delta(s.omzet, p.omzet)}</div>
-        <div><span>Conversie</span><b>${pct(s.conv, 1)}</b>${delta(s.conv, p.conv)}</div>
-        ${role().marge ? `<div><span>Marge</span><b>${eurK(s.marge)}</b>${delta(s.marge, p.marge)}</div>` : ''}
-      </div>
-      <div class="dgrid">
-        <div class="card"><h3>Funnel</h3><div class="sub">Conversie per stap t.o.v. vorige periode</div>${funnelHtml(cur, prev)}</div>
-        <div class="card"><h3>Ontwikkeling</h3><div class="sub">Omzet en leads per maand voor deze selectie</div><div class="chart short"><canvas id="chDrill"></canvas></div></div>
-      </div>
-      <div class="card"><div class="dhead"><div><h3>Uitsplitsen naar</h3><div class="sub">Klik een rij om verder in te zoomen</div></div><div class="dimchips">${Object.entries(DIMS).filter(([k]) => !(k in ctx) || k === '_dim').map(([k, l]) => `<button class="chip ${k === dim ? 'on' : ''}" data-dim="${k}">${l}</button>`).join('')}</div></div>
-        <table><thead><tr><th>${DIMS[dim]}</th><th class="num">Leads</th><th class="num">Afspraken</th><th class="num">Offertes</th><th class="num">Orders</th><th class="num">Conversie</th><th class="num">Omzet</th><th class="num">Δ omzet</th><th></th></tr></thead><tbody>
-        ${rows.map(r => `<tr class="drillrow" ${drillAttr({ ...Object.fromEntries(Object.entries(ctx).filter(([k]) => k !== '_dim')), [dim]: r.k })}><td><b>${dimLabel(dim, r.k)}</b></td><td class="num">${r.s.leads}</td><td class="num">${r.s.afspraken}</td><td class="num">${r.s.offertes}</td><td class="num">${r.s.orders}</td><td class="num">${pct(r.s.conv, 1)}</td><td class="num">${eur(r.s.omzet)} <span class="bar" style="width:${rows[0].s.omzet ? r.s.omzet / Math.max(...rows.map(x => x.s.omzet)) * 50 : 0}px"></span></td><td class="num">${r.p.omzet < 3000 ? '<span class="delta flat">–</span>' : delta(r.s.omzet, r.p.omzet)}</td><td class="num" style="color:var(--muted)">›</td></tr>`).join('')}</tbody></table></div>
-      <div class="card"><h3>Onderliggende records</h3><div class="sub">${recs.length < cur.length ? `Top ${recs.length} van ${num(cur.length)}, gesorteerd op funnelstap en waarde` : `${cur.length} leads uit het bronsysteem`}</div>
-        <div style="overflow-x:auto"><table class="recs"><thead><tr><th>#</th><th>Maand</th><th>Adviseur</th><th>Regio</th><th>Leadsoort</th><th>Producten</th><th>Stap</th><th class="num">Waarde</th></tr></thead><tbody>
-        ${recs.map(l => `<tr><td class="mono">L-${String(l.id).padStart(5, '0')}</td><td>${mLabel(l.maand)}</td><td>${advNaam(l.adviseur)}</td><td>${l.regio}${l.extern ? ' <span class="tag">op afstand</span>' : ''}</td><td>${l.leadsoort}</td><td>${l.items.join(' + ')}</td><td>${stageTag(l.stage)}</td><td class="num">${l.waarde ? eur(l.waarde) : '–'}</td></tr>`).join('')}</tbody></table></div></div>`;
-    $('#drill').hidden = false; $('#drillBack').hidden = false; $('#drill').scrollTop = 0;
-    const trendMonths = ctx.maand ? KEYS : KEYS;
-    const byM = trendMonths.map(m => stats(base.filter(l => l.maand === m)));
-    mk('chDrill', { data: { labels: trendMonths.map(mLabel), datasets: [{ type: 'bar', label: 'Omzet', data: byM.map(x => x.omzet), backgroundColor: trendMonths.map(m => months.includes(m) ? COLORS[0] : '#c9d3f5'), borderRadius: 3, yAxisID: 'y' }, { type: 'line', label: 'Leads', data: byM.map(x => x.leads), borderColor: COLORS[1], backgroundColor: COLORS[1], tension: .3, pointRadius: 2, yAxisID: 'y1' }] }, options: { maintainAspectRatio: false, onClick: (e, els) => { if (els.length) openDrill({ ...Object.fromEntries(Object.entries(ctx).filter(([k]) => k !== '_dim' && k !== 'maand')), maand: trendMonths[els[0].index] }); }, scales: { x: { grid: { display: false }, ticks: { font: { size: 10 } } }, y: { grid: { color: '#f0f1f3' }, border: { display: false }, ticks: { callback: v => eurK(v), font: { size: 10 } } }, y1: { position: 'right', grid: { display: false }, border: { display: false }, ticks: { font: { size: 10 } } } }, plugins: { legend: { labels: { font: { size: 10 } } }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.dataset.label === 'Omzet' ? eur(c.raw) : c.raw}` } } } } });
   }
 
   // ---------- CoPilot ----------
@@ -357,13 +359,12 @@
       const base = scoped(); const cur = inMonths(base, [D.HUIDIG]), prev = inMonths(base, [D.VORIG]);
       const fc = funnelCounts(cur), fp = funnelCounts(prev); const s = stats(cur), p = stats(prev);
       const steps = fc.slice(1).map((x, i) => ({ stap: `${fc[i].stage} → ${x.stage}`, cur: x.n / (fc[i].n || 1), prev: fp[i + 1].n / (fp[i].n || 1) })).map(x => ({ ...x, d: x.cur - x.prev }));
-      const worst = steps.slice().sort((a, b) => a.d - b.d)[0];
+      const worst = steps.slice().sort((a, b) => a.d - b.d)[0]; const wi = steps.indexOf(worst) + 1;
       const web = cur.filter(l => l.leadsoort === 'Website').length, webP = prev.filter(l => l.leadsoort === 'Website').length;
       let who = '';
-      const wi = steps.indexOf(worst) + 1;
       if (!r.eigen) { const advs = D.ADVISEURS.map(a => { const c = cur.filter(l => l.adviseur === a.id), pv = prev.filter(l => l.adviseur === a.id); const f = g => g.filter(l => l.stage >= wi).length / (g.filter(l => l.stage >= wi - 1).length || 1); return { a, d: f(c) - f(pv) }; }).sort((x, y) => x.d - y.d).slice(0, 2); who = `<p>De daling in die stap zit vooral bij <b>${advs.map(x => `${x.a.naam} (${(x.d * 100).toFixed(0)}pt)`).join('</b> en <b>')}</b>. De overige adviseurs bewegen binnen de normale bandbreedte.</p>`; }
       const id = 'mini' + Date.now();
-      setTimeout(() => mk(id, { type: 'bar', data: { labels: steps.map(x => x.stap), datasets: [{ label: mLabel(D.VORIG), data: steps.map(x => +(x.prev * 100).toFixed(1)), backgroundColor: '#d9dde6', borderRadius: 3 }, { label: mLabel(D.HUIDIG), data: steps.map(x => +(x.cur * 100).toFixed(1)), backgroundColor: steps.map(x => x.d < -0.05 ? COLORS[4] : COLORS[0]), borderRadius: 3 }] }, options: { maintainAspectRatio: false, scales: { x: { grid: { display: false }, ticks: { font: { size: 9.5 } } }, y: { grid: { color: '#f0f1f3' }, border: { display: false }, ticks: { callback: v => v + '%' } } }, plugins: { legend: { labels: { font: { size: 10 } } } } } }), 30);
+      setTimeout(() => mk(id, { type: 'bar', data: { labels: steps.map(x => x.stap), datasets: [{ label: mLabel(D.VORIG), data: steps.map(x => +(x.prev * 100).toFixed(1)), backgroundColor: GREY, borderRadius: 2 }, { label: mLabel(D.HUIDIG), data: steps.map(x => +(x.cur * 100).toFixed(1)), backgroundColor: steps.map(x => x.d < -0.05 ? '#d92d20' : INK), borderRadius: 2 }] }, options: { maintainAspectRatio: false, scales: { x: { ...xAxis(), ticks: { font: { size: 9.5 } } }, y: yAxis(v => v + '%') }, plugins: { legend: { labels: { font: { size: 10 }, padding: 8 } } } } }), 30);
       return `<p>De omzet${r.eigen ? ' van jouw leads' : ''} is in ${mLabel(D.HUIDIG)} <b>${pct((s.omzet - p.omzet) / p.omzet, 0)}</b> (${eurK(s.omzet)} vs. ${eurK(p.omzet)}). Twee oorzaken:</p>
         <ul><li><b>Instroom:</b> ${pct((s.leads - p.leads) / p.leads, 0)} leads, vooral <b>Website</b> (${pct((web - webP) / webP, 0)}). Deels seizoen, deels lagere online instroom.</li>
         <li><b>Conversie:</b> de grootste daling zit bij <b>${worst.stap}</b>: van ${pct(worst.prev)} naar ${pct(worst.cur)} (${(worst.d * 100).toFixed(0)}pt). De andere stappen bewegen binnen de normale bandbreedte.</li></ul>
@@ -376,20 +377,20 @@
     }
     if (/regio|provincie|capaciteit/.test(t)) {
       if (!r.datasets.includes('regio-capaciteit')) return deny('regio-capaciteit');
-      const rows = regioRows([D.HUIDIG]).sort((a, b) => b.ratio - a.ratio);
+      const saved = { ...state.f }; state.f.leadsoort = state.f.adviseur = state.f.product = state.f.regio = '';
+      const rows = regioRows([D.HUIDIG]).sort((a, b) => b.ratio - a.ratio); state.f = saved;
       const none = rows.filter(x => x.cap === 0), tekort = rows.filter(x => x.cap > 0 && x.ratio > 1.3), ruimte = rows.filter(x => x.cap > 0 && x.ratio < 0.7);
       return `<p>In ${mLabel(D.HUIDIG)} is de onbalans het grootst in:</p><ul>${tekort.map(x => `<li><b>${x.r.naam}</b>: ${x.s.leads} leads voor ${Math.round(x.cap)} afspraakslots (${x.ratio.toFixed(2)} leads per slot, ${x.advs} adviseur). Conversie ${pct(x.s.conv, 1)}.</li>`).join('')}<li><b>Zonder eigen adviseur</b>: ${none.map(x => `${x.r.naam} (${x.s.leads})`).join(', ')}. Samen ${sum(none, x => x.s.leads)} leads die op afstand worden bediend, met een conversie van ${pct(sum(none, x => x.s.orders) / sum(none, x => x.s.leads), 1)} tegenover ${pct(sum(rows.filter(x => x.cap > 0), x => x.s.orders) / sum(rows.filter(x => x.cap > 0), x => x.s.leads), 1)} in regio's met eigen adviseur.</li></ul><p>Ruimte is er in ${ruimte.map(x => `${x.r.naam} (${x.ratio.toFixed(2)})`).join(' en ')}. Een herverdeling van ${ruimte[0]?.r.naam} naar Zuid-Holland zou de druk daar het snelst verlagen.</p>${src('regio-capaciteit', 'capaciteit = som afspraakslots adviseurs in regio × 4,33 weken')}`;
     }
     if (/product|groei|verkoopt|verkopen/.test(t)) {
       if (!r.datasets.includes('product-groei')) return deny('product-groei');
       const g = productGrowth();
-      return `<p>Groei in omzet, laatste 3 maanden t.o.v. de 3 maanden ervoor:</p><ul>${g.slice(0, 3).map(x => `<li><b>${x.p.naam}</b>: +${pct(x.g, 0)} (${eurK(x.prev)} → ${eurK(x.cur)})</li>`).join('')}</ul><p>Achterblijvers: ${g.slice(-2).map(x => `<b>${x.p.naam}</b> (${pct(x.g, 0)})`).join(' en ')}. ${g.at(-1).p.naam} verliest al meerdere maanden op rij aandeel${r.marge ? `, terwijl ${g[0].p.naam} met ${pct(g[0].p.marge)} ook een hogere marge heeft dan ${g.at(-1).p.naam} (${pct(g.at(-1).p.marge)})` : ''}.</p><p>${g[0].p.naam} wordt in ${pct(D.LEADS.filter(l => l.stage >= 4 && l.items.includes(g[0].p.naam) && l.items.length > 1).length / (D.LEADS.filter(l => l.stage >= 4 && l.items.includes(g[0].p.naam)).length || 1), 0)} van de orders gecombineerd met een ander product, meestal ${(() => { const c = {}; D.LEADS.filter(l => l.stage >= 4 && l.items.includes(g[0].p.naam) && l.items.length > 1).forEach(l => l.items.filter(i => i !== g[0].p.naam).forEach(i => c[i] = (c[i] || 0) + 1)); return Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0] || '–'; })()}.</p>${src('product-groei', 'omzet per product = orderwaarde gedeeld over producten in de order')}`;
+      return `<p>Groei in omzet, laatste 3 maanden t.o.v. de 3 maanden ervoor:</p><ul>${g.slice(0, 3).map(x => `<li><b>${x.p.naam}</b>: ${x.g >= 0 ? '+' : ''}${pct(x.g, 0)} (${eurK(x.prev)} → ${eurK(x.cur)})</li>`).join('')}</ul><p>Achterblijvers: ${g.slice(-2).map(x => `<b>${x.p.naam}</b> (${pct(x.g, 0)})`).join(' en ')}. ${g.at(-1).p.naam} verliest al meerdere maanden op rij aandeel${r.marge ? `, terwijl ${g[0].p.naam} met ${pct(g[0].p.marge)} ook een hogere marge heeft dan ${g.at(-1).p.naam} (${pct(g.at(-1).p.marge)})` : ''}.</p><p>${g[0].p.naam} wordt in ${pct(D.LEADS.filter(l => l.stage >= 4 && l.items.includes(g[0].p.naam) && l.items.length > 1).length / (D.LEADS.filter(l => l.stage >= 4 && l.items.includes(g[0].p.naam)).length || 1), 0)} van de orders gecombineerd met een ander product, meestal ${(() => { const c = {}; D.LEADS.filter(l => l.stage >= 4 && l.items.includes(g[0].p.naam) && l.items.length > 1).forEach(l => l.items.filter(i => i !== g[0].p.naam).forEach(i => c[i] = (c[i] || 0) + 1)); return Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0] || '–'; })()}.</p>${src('product-groei', 'omzet per product = orderwaarde gedeeld over producten in de order')}`;
     }
     if (/pipeline|portefeuille|gezakt|400/.test(t)) {
-      const list = ams(); const last = D.SNAPSHOTS.at(-1), prev = D.SNAPSHOTS.at(-2);
+      const list = role().eigen ? [role().naam] : D.ACCOUNTMANAGERS; const last = D.SNAPSHOTS.at(-1), prev = D.SNAPSHOTS.at(-2);
       const d = sum(list, am => last.per[am].open - prev.per[am].open); const per = list.map(am => ({ am, ...last.per[am], d: last.per[am].open - prev.per[am].open })).sort((a, b) => a.d - b.d);
-      const big = per[0];
-      const avgVerloren = sum(D.SNAPSHOTS.slice(-9, -1), s => sum(list, am => s.per[am].verloren)) / 8;
+      const big = per[0]; const avgVerloren = sum(D.SNAPSHOTS.slice(-9, -1), s => sum(list, am => s.per[am].verloren)) / 8;
       return `<p>De ${r.eigen ? 'eigen ' : ''}portefeuille daalde van ${eurK(sum(list, am => prev.per[am].open))} naar ${eurK(sum(list, am => last.per[am].open))} tussen ${prev.label} en ${last.label}: <b>${eurK(d)}</b>.</p><ul><li><b>Verloren:</b> ${eurK(sum(list, am => last.per[am].verloren))}, tegenover gemiddeld ${eurK(avgVerloren)} per week in de 8 weken ervoor.</li><li><b>Gemuteerd:</b> ${eurK(sum(list, am => last.per[am].gemuteerd))} (offertes verlaagd in waarde).</li><li><b>Nieuw:</b> ${eurK(sum(list, am => last.per[am].nieuw))}, ${sum(list, am => last.per[am].nieuw) < sum(list, am => prev.per[am].nieuw) ? 'lager dan' : 'vergelijkbaar met'} vorige week.</li></ul>${r.eigen ? '' : `<p>Vrijwel de hele daling zit bij <b>${big.am}</b>: ${eurK(big.d)} in één week, waarvan ${eurK(big.verloren)} verloren. Dat past bij één of enkele grote offertes die zijn verlopen of afgewezen, niet bij een brede trend. Bij de andere accountmanagers bewegen de cijfers binnen de normale weekbandbreedte.</p>`}${src('pipeline-mutaties', 'wekelijkse snapshot; mutaties = verschil tussen twee snapshots per offerte')}`;
     }
     if (/leadsoort|website|leads.*dalen/.test(t)) {
@@ -399,12 +400,8 @@
     }
     return `<p>Deze vraag valt buiten de vooraf gedefinieerde datasets voor jouw rol. CoPilot krijgt geen vrije toegang tot de onderliggende database.</p><p>Beschikbaar voor <b>${r.label}</b>: ${r.datasets.map(d => `<code>${d}</code>`).join(', ')}. Probeer één van de voorbeeldvragen hieronder.</p>${src('–', 'geen dataset gematcht')}`;
   }
-
-  function openCopilot(q) {
-    $('#copilot').hidden = false; $('#app').classList.add('copilot-open');
-    charts.forEach(c => c.resize());
-    if (q) ask(q);
-  }
+  function openCopilot(q) { $('#copilot').hidden = false; $('#app').classList.add('copilot-open'); charts.forEach(c => c.resize()); if (q) ask(q); }
+  function closeCopilot() { $('#copilot').hidden = true; $('#app').classList.remove('copilot-open'); charts.forEach(c => c.resize()); }
   function ask(q) {
     const msgs = $('#msgs');
     msgs.insertAdjacentHTML('beforeend', `<div class="msg user">${q}</div>`);
@@ -414,33 +411,30 @@
     setTimeout(() => { const el = document.getElementById(tid); el.innerHTML = answer(q); msgs.scrollTop = msgs.scrollHeight; setTimeout(() => msgs.scrollTop = msgs.scrollHeight, 120); }, 700 + Math.random() * 500);
   }
   function resetCopilot() {
-    $('#msgs').innerHTML = `<div class="msg bot"><p>Hoi ${role().naam.split(' ')[0]}. Ik beantwoord businessvragen op dezelfde datasets en definities als het dashboard, binnen de rechten van je rol <b>${role().label}</b>.</p><p>Waar wil je inzicht in?</p></div>`;
-    $('#chips').innerHTML = QUESTIONS.map(q => `<button class="chip" data-ask="${q}">${q}</button>`).join('');
+    $('#msgs').innerHTML = `<div class="msg bot"><p>Hoi ${role().naam.split(' ')[0]}. Ik beantwoord businessvragen op dezelfde datasets en definities als het dashboard, binnen de rechten van je rol <b>${role().label}</b>.</p></div>`;
+    $('#chips').innerHTML = QUESTIONS.map(q => `<button class="qchip" data-ask="${q}">${q}</button>`).join('');
   }
 
   // ---------- Events ----------
   document.addEventListener('click', e => {
     const a = e.target.closest('[data-ask]'); if (a) { openCopilot(a.dataset.ask); return; }
-    const d = e.target.closest('[data-drill]'); if (d) { openDrill(JSON.parse(d.dataset.drill)); return; }
-    const cr = e.target.closest('[data-crumb]'); if (cr) { drillStack = drillStack.slice(0, +cr.dataset.crumb + 1); renderDrill(); return; }
-    const dm = e.target.closest('[data-dim]'); if (dm) { drillStack.at(-1)._dim = dm.dataset.dim; renderDrill(); return; }
-    if (e.target.closest('#drillBack') || e.target.closest('#closeDrill')) { closeDrill(); return; }
-    const n = e.target.closest('.nav'); if (n && !n.disabled) { state.page = n.dataset.page; closeDrill(); render(); }
+    const cl = e.target.closest('[data-clear]'); if (cl) { if (cl.dataset.clear === 'all') { state.f.leadsoort = state.f.adviseur = state.f.product = state.f.regio = ''; } else state.f[cl.dataset.clear] = ''; render(); return; }
+    const dm = e.target.closest('[data-dim]'); if (dm) { state.dim[dm.closest('[data-dimkey]').dataset.dimkey] = dm.dataset.dim; render(); return; }
+    const d = e.target.closest('[data-set]'); if (d && d.dataset.val) { setFilter(d.dataset.set, d.dataset.val); return; }
+    const n = e.target.closest('.tab'); if (n && !n.disabled) { state.page = n.dataset.page; render(); }
   });
-  $('#role').onchange = e => { state.role = e.target.value; state.f.adviseur = ''; closeDrill(); resetCopilot(); render(); };
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#drill').hidden) closeDrill(); });
+  $('#role').onchange = e => { state.role = e.target.value; state.f.adviseur = ''; if (!role().pages.includes('regio')) state.f.regio = ''; resetCopilot(); render(); };
   $('#toggleCopilot').onclick = () => $('#copilot').hidden ? openCopilot() : closeCopilot();
-  $('#closeCopilot').onclick = () => closeCopilot();
-  function closeCopilot() { $('#copilot').hidden = true; $('#app').classList.remove('copilot-open'); charts.forEach(c => c.resize()); }
+  $('#closeCopilot').onclick = closeCopilot;
   $('#askForm').onsubmit = e => { e.preventDefault(); const v = $('#askInput').value.trim(); if (!v) return; $('#askInput').value = ''; ask(v); };
 
-  // Deep links: #page=sales&role=adviseur&ask=<vraag>
+  // Deep links: #page=sales&role=adviseur&ask=<vraag>&regio=Zuid-Holland&product=Warmtepomp&van=2026-07&tot=2026-09
   const h = new URLSearchParams(location.hash.slice(1));
   if (h.get('role') && ROLES[h.get('role')]) { state.role = h.get('role'); $('#role').value = state.role; }
   if (h.get('page')) state.page = h.get('page');
+  ['van', 'tot', 'leadsoort', 'adviseur', 'product', 'regio'].forEach(k => { if (h.get(k)) state.f[k] = h.get(k); });
   resetCopilot();
   render();
   if (h.get('ask')) openCopilot(h.get('ask'));
-  if (h.get('drill')) { try { openDrill(JSON.parse(h.get('drill'))); } catch (e) { } }
   else if (h.get('copilot')) openCopilot();
 })();

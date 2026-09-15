@@ -8,7 +8,7 @@ Klikbare demo van een rapportagelaag bovenop een bestaand CRM/bronsysteem, met:
 
 Alle data is synthetisch en fictief. Geen build-stap: statische HTML + Chart.js.
 
-- Periode: maand-bereik (van/tot) met snelkeuzes
-- Drilldowns: klik op een KPI, tabelrij, regiotegel of staaf in een grafiek; zoom verder via 'Uitsplitsen naar'
+- Eén globale filterbalk (periode, leadsoort, adviseur, product, regio) die elke pagina stuurt
+- Drilldown = cross-filtering: klik op een rij, staaf, regiotegel of maand en de hele pagina filtert mee; filters verschijnen als chips
 
-Deep links: `#page=sales&role=adviseur&ask=<vraag>` of `#copilot=1`, drilldown via `#drill={"adviseur":"a3"}`.
+Deep links: `#page=sales&role=adviseur&ask=<vraag>`, `#copilot=1`, filters via `#regio=Zuid-Holland&product=Warmtepomp&van=2026-07&tot=2026-09`.
