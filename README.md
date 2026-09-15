@@ -6,7 +6,7 @@ Klikbare demo van een rapportagelaag bovenop een bestaand CRM/bronsysteem, met:
 - Management, Sales & commercie, Productanalyse, Regionale analyse, Pipeline-ontwikkeling
 - Een CoPilot-paneel dat businessvragen beantwoordt op vooraf gedefinieerde datasets, binnen dezelfde rechten
 
-Alle data is synthetisch en fictief. Geen build-stap: statische HTML + Chart.js.
+Alle data is synthetisch en fictief. Geen build-stap: statische HTML + Chart.js. Fonts: DM Sans, Fraunces, DM Mono.
 
 - Eén globale filterbalk (periode, leadsoort, adviseur, product, regio) die elke pagina stuurt
 - Drilldown = cross-filtering: klik op een rij, staaf, regiotegel of maand en de hele pagina filtert mee; filters verschijnen als chips
