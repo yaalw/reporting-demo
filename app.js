@@ -9,7 +9,7 @@
     sales: { naam: 'Merel Koning', label: 'Salesmanager', pages: ['overzicht', 'b2c', 'b2b', 'product', 'regio', 'pipeline', 'opzet'], marge: false, datasets: ['omzet-funnel', 'adviseur-conversie', 'regio-capaciteit', 'product-groei', 'pipeline-mutaties'] },
     adviseur: { naam: 'Lotte Bakker', label: 'Adviseur', pages: ['overzicht', 'b2c', 'b2b', 'pipeline', 'opzet'], marge: false, adviseurId: 'a3', datasets: ['omzet-funnel', 'adviseur-conversie', 'pipeline-mutaties'], eigen: true },
   };
-  const PAGE_SEG = { b2c: 'B2C', b2b: 'B2B' };
+  const PAGE_SEG = { b2c: 'B2C', b2b: 'B2B', pipeline: 'B2B' };
   const KLANT = Object.fromEntries(D.KLANTEN.map(k => [k.id, k]));
   const state = {
     role: 'directie', page: 'overzicht', detail: null,
@@ -134,10 +134,10 @@
     ];
   };
   function renderFilters() {
-    const r = role(); const active = Object.keys(dimFilters()).length;
+    const r = role(); const active = Object.keys(dimFilters()).length; const defs = state.page === 'pipeline' && !state.detail ? FILTER_DEFS().filter(f => f.key === 'adviseur' || f.key === 'klanttype') : FILTER_DEFS();
     const trig = (key, label, on) => `<button class="dd ${on ? 'on' : ''}" data-dd="${key}"><span>${label}</span><svg viewBox="0 0 10 6"><path d="M1 1l4 4 4-4"/></svg></button>`;
-    const flags = segOf() === 'B2B' ? [['top', 'Topklant'], ['actief', 'Actieve klant'], ['ontevreden', 'Ontevreden klant']].map(([k, l]) => `<button class="flag ${state.f[k] ? 'on' : ''}" data-flag="${k}">${l}</button>`).join('') : '';
-    $('#filters').innerHTML = `${FILTER_DEFS().map(f => { const v = state.f[f.key]; const o = v && f.opts.find(o => o.v === v); return trig(f.key, o ? `${f.label}: <b>${o.l}</b>` : f.label, !!o); }).join('')}${flags}
+    const flags = segOf() === 'B2B' && state.page !== 'pipeline' ? [['top', 'Topklant'], ['actief', 'Actieve klant'], ['ontevreden', 'Ontevreden klant']].map(([k, l]) => `<button class="flag ${state.f[k] ? 'on' : ''}" data-flag="${k}">${l}</button>`).join('') : '';
+    $('#filters').innerHTML = `${defs.map(f => { const v = state.f[f.key]; const o = v && f.opts.find(o => o.v === v); return trig(f.key, o ? `${f.label}: <b>${o.l}</b>` : f.label, !!o); }).join('')}${flags}
       ${active ? '<button class="clear" data-clear="all">Wis filters</button>' : ''}
       <span class="scope">${r.eigen ? `Alleen eigen gegevens · ${r.naam}` : ''}</span>`;
   }
@@ -360,30 +360,35 @@
   }
   afterRender.regio = () => { timeChart('ch_rg', 'rg', RG_DIMS); afterBottom('rg'); };
 
-  // ----- Pipeline -----
+  // ----- Pipeline (B2B) -----
   const ams = () => { if (role().eigen) return [role().naam]; if (state.f.adviseur && D.ACCOUNTMANAGERS.includes(advNaam(state.f.adviseur))) return [advNaam(state.f.adviseur)]; return D.ACCOUNTMANAGERS; };
+  const ptypes = () => state.f.klanttype ? [state.f.klanttype] : D.KLANTTYPES;
+  const pv = (s, am, t, k) => s.per[am].types[t][k];
+  const ptot = (s, k, am, t) => sum(am ? [am] : ams(), a => sum(t ? [t] : ptypes(), ty => pv(s, a, ty, k)));
   function pagePipeline() {
-    const list = ams(); const S = D.SNAPSHOTS; const last = S.at(-1), prev = S.at(-2), first = S[0];
-    const tot = s => sum(list, am => s.per[am].open); const mut = (s, k) => sum(list, am => s.per[am][k]);
-    const avgV = sum(S.slice(-9, -1), s => mut(s, 'verloren')) / 8;
-    return head('Pipeline', 'Openstaande offertes, elke week vastgelegd', `${eurK(tot(last))} open · ${last.label}`) + `
+    const S = D.SNAPSHOTS; const last = S.at(-1), prev = S.at(-2), first = S[0];
+    const stack = (state.chart.pipe || (state.chart.pipe = { stack: 'accountmanager' })).stack;
+    const avgV = sum(S.slice(-9, -1), s => ptot(s, 'verloren')) / 8;
+    const byAM = stack === 'accountmanager';
+    const rows = (byAM ? ams() : ptypes()).map(k => { const g = (s, m) => byAM ? ptot(s, m, k) : ptot(s, m, null, k); const d = g(last, 'open') - g(prev, 'open'); const adv = byAM ? D.ADVISEURS.find(a => a.naam === k) : null; return { k, adv, open: g(last, 'open'), openP: g(prev, 'open'), nieuw: g(last, 'nieuw'), gewonnen: g(last, 'gewonnen'), verloren: g(last, 'verloren'), gemuteerd: g(last, 'gemuteerd'), d }; }).sort((a, b) => b.open - a.open);
+    return head('Pipeline B2B', 'Openstaande offertes bij zakelijke klanten, elke week vastgelegd', `${eurK(ptot(last, 'open'))} open · ${last.label}`) + `
       ${section('Kerncijfers', `week van ${last.label} · vergeleken met ${prev.label}`, kpis([
-        kpi('Open offertes', eurK, tot(last), tot(prev), { vs: 'vs. vorige week' }),
-        kpi('Nieuw', eurK, mut(last, 'nieuw'), mut(prev, 'nieuw'), { vs: 'vs. vorige week' }),
-        kpi('Gewonnen', eurK, mut(last, 'gewonnen'), mut(prev, 'gewonnen'), { vs: 'vs. vorige week' }),
-        kpi('Verloren', eurK, mut(last, 'verloren'), avgV, { vs: 'vs. gem. 8 weken', invert: true }),
-        kpi('Gemuteerd', eurK, mut(last, 'gemuteerd'), 0, { vs: '', cmp: 'waardewijzigingen op open offertes' }),
-        kpi('Groei 26 weken', v => (v >= 0 ? '+' : '') + pct(v, 1), (tot(last) - tot(first)) / tot(first), 0, { vs: '', cmp: `${first.label} ${eurK(tot(first))} → ${last.label} ${eurK(tot(last))}` }),
+        kpi('Open offertes', eurK, ptot(last, 'open'), ptot(prev, 'open'), { vs: 'vs. vorige week' }),
+        kpi('Nieuw', eurK, ptot(last, 'nieuw'), ptot(prev, 'nieuw'), { vs: 'vs. vorige week' }),
+        kpi('Gewonnen', eurK, ptot(last, 'gewonnen'), ptot(prev, 'gewonnen'), { vs: 'vs. vorige week' }),
+        kpi('Verloren', eurK, ptot(last, 'verloren'), avgV, { vs: 'vs. gem. 8 weken', invert: true }),
+        kpi('Gemuteerd', eurK, ptot(last, 'gemuteerd'), 0, { vs: '', cmp: 'waardewijzigingen op open offertes' }),
+        kpi('Groei 26 weken', v => (v >= 0 ? '+' : '') + pct(v, 1), (ptot(last, 'open') - ptot(first, 'open')) / ptot(first, 'open'), 0, { vs: '', cmp: `${first.label} ${eurK(ptot(first, 'open'))} → ${last.label} ${eurK(ptot(last, 'open'))}` }),
       ]))}
-      ${section('Portefeuille over tijd', '26 wekelijkse snapshots per accountmanager · klik op een lijn om te filteren', `<div class="card"><div class="chart hero"><canvas id="hero"></canvas></div></div>`)}
+      ${section('Portefeuille over tijd', '26 wekelijkse snapshots · klik op een vlak om te filteren', `<div class="card"><div class="toggles"><div class="seg" data-ctx="pipe"><span class="segl">Stapel op</span>${[['accountmanager', 'Accountmanager'], ['klanttype', 'Klanttype']].map(([v, l]) => `<button class="${stack === v ? 'on' : ''}" data-stack="${v}">${l}</button>`).join('')}</div></div><div class="chart hero"><canvas id="hero"></canvas></div></div>`)}
       ${section('Mutaties', `${prev.label} → ${last.label}`, `<div class="row"><div class="card c4">${cardhead('Deze week', '')}<div class="chart"><canvas id="chWater"></canvas></div></div>
-        <div class="card c8">${cardhead('Per accountmanager', 'klik voor het adviseuroverzicht')}<table><thead><tr><th>Accountmanager</th><th class="num">Open vorige week</th><th class="num">Nieuw</th><th class="num">Gewonnen</th><th class="num">Verloren</th><th class="num">Gemuteerd</th><th class="num">Open nu</th><th class="num">Δ week</th></tr></thead><tbody>
-        ${list.map(am => { const l = last.per[am], p = prev.per[am]; const d = l.open - p.open; const adv = D.ADVISEURS.find(a => a.naam === am); return `<tr class="drillrow" data-detail="adviseur" data-id="${adv ? adv.id : ''}"><td>${am}</td><td class="num">${eur(p.open)}</td><td class="num">${eur(l.nieuw)}</td><td class="num">${eur(l.gewonnen)}</td><td class="num ${l.verloren > 150000 ? 'neg' : ''}">${eur(l.verloren)}</td><td class="num">${eur(l.gemuteerd)}</td><td class="num">${eur(l.open)}</td><td class="num ${d < -100000 ? 'neg' : d > 50000 ? 'pos' : 'dim'}">${d >= 0 ? '+' : '−'}${eurK(Math.abs(d))}</td></tr>`; }).join('')}</tbody></table></div></div>`)}`;
+        <div class="card c8">${cardhead(byAM ? 'Per accountmanager' : 'Per klanttype', byAM ? 'klik voor het adviseuroverzicht' : 'klik om te filteren')}<table><thead><tr><th>${byAM ? 'Accountmanager' : 'Klanttype'}</th><th class="num">Open vorige week</th><th class="num">Nieuw</th><th class="num">Gewonnen</th><th class="num">Verloren</th><th class="num">Gemuteerd</th><th class="num">Open nu</th><th class="num">Δ week</th></tr></thead><tbody>
+        ${rows.map(r => `<tr class="drillrow" ${byAM ? `data-detail="adviseur" data-id="${r.adv ? r.adv.id : ''}"` : `data-set="klanttype" data-val="${r.k}"`}><td>${r.k}</td><td class="num">${eur(r.openP)}</td><td class="num">${eur(r.nieuw)}</td><td class="num">${eur(r.gewonnen)}</td><td class="num ${r.verloren > 150000 ? 'neg' : ''}">${eur(r.verloren)}</td><td class="num">${eur(r.gemuteerd)}</td><td class="num">${eur(r.open)}</td><td class="num ${r.d < -100000 ? 'neg' : r.d > 50000 ? 'pos' : 'dim'}">${r.d >= 0 ? '+' : '−'}${eurK(Math.abs(r.d))}</td></tr>`).join('')}</tbody></table></div></div>`)}`;
   }
   afterRender.pipeline = () => {
-    const list = ams(); const S = D.SNAPSHOTS;
-    mk('hero', { type: 'line', data: { labels: S.map(s => s.label), datasets: list.map((am, i) => ({ label: am, data: S.map(s => s.per[am].open), borderColor: PAL[i], backgroundColor: PAL[i] + '2a', fill: true, tension: .3, pointRadius: 0, borderWidth: 1.5 })) }, options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, onClick: (e, els) => { if (els.length && !role().eigen) { const adv = D.ADVISEURS.find(a => a.naam === list[els[0].datasetIndex]); if (adv) setFilter('adviseur', adv.id); } }, onHover: pointer, scales: { x: xAxis(), y: { ...yAxis(v => eurK(v)), stacked: true } }, plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${eur(c.raw)}` } } } } });
-    const last = S.at(-1), prev = S.at(-2); const t = k => sum(list, am => last.per[am][k]); const start = sum(list, am => prev.per[am].open);
+    const S = D.SNAPSHOTS; const stack = state.chart.pipe.stack; const byAM = stack === 'accountmanager'; const keys = byAM ? ams() : ptypes();
+    mk('hero', { type: 'line', data: { labels: S.map(s => s.label), datasets: keys.map((k, i) => ({ label: k, data: S.map(s => byAM ? ptot(s, 'open', k) : ptot(s, 'open', null, k)), borderColor: PAL[i], backgroundColor: PAL[i] + '2a', fill: true, tension: .3, pointRadius: 0, borderWidth: 1.5 })) }, options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, onClick: (e, els) => { if (!els.length) return; const k = keys[els[0].datasetIndex]; if (byAM) { if (role().eigen) return; const adv = D.ADVISEURS.find(a => a.naam === k); if (adv) setFilter('adviseur', adv.id); } else setFilter('klanttype', k); }, onHover: pointer, scales: { x: xAxis(), y: { ...yAxis(v => eurK(v)), stacked: true } }, plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${eur(c.raw)}` } } } } });
+    const last = S.at(-1), prev = S.at(-2); const t = k => ptot(last, k); const start = ptot(prev, 'open');
     let run = start; const steps = [['Start', [0, start], GREY]]; [['Nieuw', t('nieuw'), INK], ['Gewonnen', -t('gewonnen'), ACC], ['Verloren', -t('verloren'), BAD], ['Gemuteerd', t('gemuteerd'), '#c9c6bf']].forEach(([l, v, c]) => { steps.push([l, [run, run + v], c]); run += v; }); steps.push(['Eind', [0, run], '#8f8d88']);
     mk('chWater', { type: 'bar', data: { labels: steps.map(s => s[0]), datasets: [{ data: steps.map(s => s[1]), backgroundColor: steps.map(s => s[2]), borderRadius: 3 }] }, options: { maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => eur(c.raw[1] - c.raw[0]) } } }, scales: { x: xAxis(), y: yAxis(v => eurK(v), { min: Math.floor(start * 0.8 / 1e5) * 1e5 }) } } });
   };
@@ -426,7 +431,7 @@
       <div class="row">
         <div class="card c6">${cardhead('Rollen en zichtbaarheid', 'wissel de rol linksonder om dit te zien')}
           <table><thead><tr><th>Onderdeel</th><th>Directie</th><th>Salesmanager</th><th>Adviseur</th></tr></thead><tbody>
-          ${[['Overzicht', 1, 1, 'eigen'], ['Sales B2C en B2B', 1, 1, 'eigen'], ['Producten (incl. marge)', 1, 'zonder marge', 0], ['Regio', 1, 1, 0], ['Pipeline', 1, 1, 'eigen'], ['CoPilot-datasets', 5, 5, 3]].map(r => `<tr><td>${r[0]}</td>${r.slice(1).map(v => `<td>${v === 1 ? '<span class="tag good">✓</span>' : v === 0 ? '<span class="tag">–</span>' : `<span class="tag warn">${v}</span>`}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+          ${[['Overzicht', 1, 1, 'eigen'], ['Sales B2C en B2B', 1, 1, 'eigen'], ['Producten (incl. marge)', 1, 'zonder marge', 0], ['Regio', 1, 1, 0], ['Pipeline B2B', 1, 1, 'eigen'], ['CoPilot-datasets', 5, 5, 3]].map(r => `<tr><td>${r[0]}</td>${r.slice(1).map(v => `<td>${v === 1 ? '<span class="tag good">✓</span>' : v === 0 ? '<span class="tag">–</span>' : `<span class="tag warn">${v}</span>`}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
         <div class="card c6">${cardhead('Datasets voor CoPilot', 'een vraag wordt vertaald naar één dataset en beantwoord met dezelfde definities als het dashboard')}
           <table><thead><tr><th>Dataset</th><th>Beantwoordt</th></tr></thead><tbody>
             <tr><td><code>omzet-funnel</code></td><td>Waar in de funnel verandert omzet of conversie?</td></tr>
@@ -485,8 +490,8 @@
     if (/pipeline|portefeuille|gezakt|400/.test(t)) {
       const list = r.eigen ? [r.naam] : D.ACCOUNTMANAGERS; const last = D.SNAPSHOTS.at(-1), prev2 = D.SNAPSHOTS.at(-2);
       const d = sum(list, am => last.per[am].open - prev2.per[am].open); const per = list.map(am => ({ am, ...last.per[am], d: last.per[am].open - prev2.per[am].open })).sort((a, b) => a.d - b.d);
-      const big = per[0]; const avgVerloren = sum(D.SNAPSHOTS.slice(-9, -1), s => sum(list, am => s.per[am].verloren)) / 8; const adv = D.ADVISEURS.find(a => a.naam === big.am);
-      return `<p>De ${r.eigen ? 'eigen ' : ''}portefeuille daalde van ${eurK(sum(list, am => prev2.per[am].open))} naar ${eurK(sum(list, am => last.per[am].open))} tussen ${prev2.label} en ${last.label}: <b>${eurK(d)}</b>.</p><ul><li><b>Verloren:</b> ${eurK(sum(list, am => last.per[am].verloren))}, tegenover gemiddeld ${eurK(avgVerloren)} per week in de 8 weken ervoor.</li><li><b>Gemuteerd:</b> ${eurK(sum(list, am => last.per[am].gemuteerd))} (offertes verlaagd in waarde).</li><li><b>Nieuw:</b> ${eurK(sum(list, am => last.per[am].nieuw))}.</li></ul>${r.eigen ? '' : `<p>Vrijwel de hele daling zit bij <b><a class="lnk" data-detail="adviseur" data-id="${adv ? adv.id : ''}">${big.am}</a></b>: ${eurK(big.d)} in één week, waarvan ${eurK(big.verloren)} verloren. Dat past bij één of enkele grote offertes die zijn verlopen of afgewezen, niet bij een brede trend.</p>`}${src('pipeline-mutaties', 'wekelijkse snapshot; mutaties = verschil tussen twee snapshots per offerte')}`;
+      const big = per[0]; const avgVerloren = sum(D.SNAPSHOTS.slice(-9, -1), s => sum(list, am => s.per[am].verloren)) / 8; const adv = D.ADVISEURS.find(a => a.naam === big.am); const bigType = Object.entries(last.per[big.am].types).sort((a, b) => b[1].verloren - a[1].verloren)[0][0];
+      return `<p>De ${r.eigen ? 'eigen ' : ''}portefeuille daalde van ${eurK(sum(list, am => prev2.per[am].open))} naar ${eurK(sum(list, am => last.per[am].open))} tussen ${prev2.label} en ${last.label}: <b>${eurK(d)}</b>.</p><ul><li><b>Verloren:</b> ${eurK(sum(list, am => last.per[am].verloren))}, tegenover gemiddeld ${eurK(avgVerloren)} per week in de 8 weken ervoor.</li><li><b>Gemuteerd:</b> ${eurK(sum(list, am => last.per[am].gemuteerd))} (offertes verlaagd in waarde).</li><li><b>Nieuw:</b> ${eurK(sum(list, am => last.per[am].nieuw))}.</li></ul>${r.eigen ? '' : `<p>Vrijwel de hele daling zit bij <b><a class="lnk" data-detail="adviseur" data-id="${adv ? adv.id : ''}">${big.am}</a></b>: ${eurK(big.d)} in één week, waarvan ${eurK(big.verloren)} verloren, bijna volledig in het klanttype <b>${bigType}</b>. Dat past bij één of enkele grote offertes die zijn verlopen of afgewezen, niet bij een brede trend.</p>`}${src('pipeline-mutaties', 'wekelijkse snapshot; mutaties = verschil tussen twee snapshots per offerte')}`;
     }
     if (/leadsoort|website|leads.*dalen/.test(t)) {
       const rows = D.LEADSOORTEN.map(ls => ({ ls, c: cur.filter(l => l.leadsoort === ls).length, p: prev.filter(l => l.leadsoort === ls).length })).map(x => ({ ...x, d: (x.c - x.p) / (x.p || 1) })).sort((a, b) => a.d - b.d);

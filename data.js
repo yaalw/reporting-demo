@@ -124,21 +124,29 @@
     });
   });
 
-  // Pipeline-snapshots: 26 weken, wekelijkse opname van de openstaande offerteportefeuille per accountmanager
+  // Pipeline-snapshots (B2B): 26 weken, wekelijkse opname van de openstaande offerteportefeuille per accountmanager en klanttype
   const SNAPSHOTS = [];
-  let open = { 'Bram Jansen': 1180000, 'Lotte Bakker': 940000, 'Daan Visser': 1010000, 'Fleur Smit': 760000, 'Noor van Dijk': 690000 };
+  const share = {}; ACCOUNTMANAGERS.forEach(am => { const w = KLANTTYPES.map(t => 0.6 + KLANTEN.filter(k => k.accountmanager === am && k.type === t).length * (0.8 + rnd() * 0.6)); const tot = w.reduce((a, b) => a + b, 0); share[am] = w.map(x => x / tot); });
+  const bigType = am => KLANTTYPES[share[am].indexOf(Math.max(...share[am]))];
+  const open = {}; ACCOUNTMANAGERS.forEach((am, i) => { const base = [1180000, 940000, 1010000, 760000, 690000][i]; open[am] = KLANTTYPES.map((t, j) => Math.round(base * share[am][j] / 1000) * 1000); });
   for (let w = 25; w >= 0; w--) {
     const d = new Date(2026, 8, 14); d.setDate(d.getDate() - w * 7);
     const per = {};
     ACCOUNTMANAGERS.forEach(am => {
-      let nieuw = Math.round((90000 + rnd() * 80000) / 1000) * 1000;
-      const gewonnen = Math.round((50000 + rnd() * 60000) / 1000) * 1000;
-      let verloren = Math.round((20000 + rnd() * 40000) / 1000) * 1000;
-      let gemuteerd = Math.round((rnd() - 0.5) * 40000 / 1000) * 1000;
-      if (w === 0 && am === 'Bram Jansen') { verloren += 310000; gemuteerd -= 95000; }
-      if (w === 0 && am === 'Noor van Dijk') { nieuw -= 40000; }
-      open[am] = open[am] + nieuw - gewonnen - verloren + gemuteerd;
-      per[am] = { open: open[am], nieuw, gewonnen, verloren, gemuteerd };
+      const types = {};
+      KLANTTYPES.forEach((t, j) => {
+        const sh = share[am][j];
+        let nieuw = Math.round((90000 + rnd() * 80000) * sh / 1000) * 1000;
+        const gewonnen = Math.round((50000 + rnd() * 60000) * sh / 1000) * 1000;
+        let verloren = Math.round((20000 + rnd() * 40000) * sh / 1000) * 1000;
+        let gemuteerd = Math.round((rnd() - 0.5) * 40000 * sh / 1000) * 1000;
+        if (w === 0 && am === 'Bram Jansen' && t === bigType(am)) { verloren += 310000; gemuteerd -= 95000; }
+        if (w === 0 && am === 'Noor van Dijk' && t === bigType(am)) { nieuw = Math.max(0, nieuw - 40000); }
+        open[am][j] = open[am][j] + nieuw - gewonnen - verloren + gemuteerd;
+        types[t] = { open: open[am][j], nieuw, gewonnen, verloren, gemuteerd };
+      });
+      const agg = k => KLANTTYPES.reduce((a, t) => a + types[t][k], 0);
+      per[am] = { open: agg('open'), nieuw: agg('nieuw'), gewonnen: agg('gewonnen'), verloren: agg('verloren'), gemuteerd: agg('gemuteerd'), types };
     });
     SNAPSHOTS.push({ datum: d.toISOString().slice(0, 10), label: d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' }), per });
   }
