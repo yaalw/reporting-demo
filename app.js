@@ -8,7 +8,7 @@
     sales: { naam: 'Merel Koning', init: 'MK', label: 'Salesmanager', pages: ['sales', 'product', 'regio', 'pipeline', 'opzet'], marge: false, datasets: ['omzet-funnel', 'adviseur-conversie', 'regio-capaciteit', 'product-groei', 'pipeline-mutaties'] },
     adviseur: { naam: 'Lotte Bakker', init: 'LB', label: 'Adviseur', pages: ['sales', 'pipeline', 'opzet'], marge: false, adviseurId: 'a3', datasets: ['omzet-funnel', 'adviseur-conversie', 'pipeline-mutaties'], eigen: true },
   };
-  const state = { role: 'directie', page: 'management', f: { periode: D.HUIDIG, leadsoort: '', adviseur: '', product: '' } };
+  const state = { role: 'directie', page: 'management', f: { van: D.HUIDIG, tot: D.HUIDIG, leadsoort: '', adviseur: '', product: '' } };
   let charts = [];
 
   // ---------- Helpers ----------
@@ -40,11 +40,11 @@
 
   // ---------- Data-scoping ----------
   const scoped = () => role().eigen ? D.LEADS.filter(l => l.adviseur === role().adviseurId) : D.LEADS;
-  const periodMonths = (sel) => {
-    const keys = D.MAANDEN.map(m => m.key);
-    if (sel === 'l3') return keys.slice(-3);
-    if (sel === 'l12') return keys.slice(-12);
-    return [sel];
+  const KEYS = D.MAANDEN.map(m => m.key);
+  const periodMonths = () => {
+    let a = KEYS.indexOf(state.f.van), b = KEYS.indexOf(state.f.tot);
+    if (a < 0) a = KEYS.length - 1; if (b < 0) b = KEYS.length - 1; if (a > b) [a, b] = [b, a];
+    return KEYS.slice(a, b + 1);
   };
   const prevMonths = (months) => {
     const keys = D.MAANDEN.map(m => m.key); const i = keys.indexOf(months[0]);
@@ -86,10 +86,17 @@
   const afterRender = {};
 
   const head = (title, sub, filters = '') => `<div class="page-head"><div><h1>${title}</h1><p>${sub}</p></div><div class="filters">${filters}${role().eigen ? `<span class="scope" style="align-self:center">Alleen eigen gegevens · ${role().naam}</span>` : ''}</div></div>`;
-  const periodeSelect = () => `<select data-f="periode">${D.MAANDEN.slice().reverse().slice(0, 6).map(m => `<option value="${m.key}" ${state.f.periode === m.key ? 'selected' : ''}>${m.key === D.HUIDIG ? 'Deze maand' : ''} ${m.label}</option>`).join('')}<option value="l3" ${state.f.periode === 'l3' ? 'selected' : ''}>Laatste 3 maanden</option><option value="l12" ${state.f.periode === 'l12' ? 'selected' : ''}>Laatste 12 maanden</option></select>`;
+  const periodeSelect = () => {
+    const months = periodMonths(); const n = months.length;
+    const preset = (l, k) => `<button type="button" class="preset ${(k === 'm' && n === 1 && months[0] === D.HUIDIG) || (k === '3' && n === 3 && months[2] === D.HUIDIG) || (k === '12' && n === 12 && months[11] === D.HUIDIG) ? 'on' : ''}" data-preset="${k}">${l}</button>`;
+    return `<div class="range"><input type="month" data-f="van" min="${KEYS[0]}" max="${KEYS.at(-1)}" value="${state.f.van}"><span>t/m</span><input type="month" data-f="tot" min="${KEYS[0]}" max="${KEYS.at(-1)}" value="${state.f.tot}"><span class="sep"></span>${preset('Deze maand', 'm')}${preset('3 mnd', '3')}${preset('12 mnd', '12')}</div>`;
+  };
   const sel = (key, label, opts) => `<select data-f="${key}"><option value="">${label}: alle</option>${opts.map(o => `<option value="${o.v}" ${state.f[key] === o.v ? 'selected' : ''}>${o.l}</option>`).join('')}</select>`;
-  function bindFilters() { document.querySelectorAll('[data-f]').forEach(el => el.onchange = () => { state.f[el.dataset.f] = el.value; render(); }); }
-  const kpi = (lbl, val, cur, prev, opts = {}) => `<div class="card c3 kpi"><div class="lbl">${lbl}</div><div class="val">${val}</div>${delta(cur, prev, opts)}<span class="vs">vs. ${opts.vs || 'vorige periode'}</span></div>`;
+  function bindFilters() {
+    document.querySelectorAll('[data-f]').forEach(el => el.onchange = () => { const v = el.value; if ((el.dataset.f === 'van' || el.dataset.f === 'tot') && !KEYS.includes(v)) { el.value = state.f[el.dataset.f]; return; } state.f[el.dataset.f] = v; render(); });
+    document.querySelectorAll('[data-preset]').forEach(el => el.onclick = () => { const k = el.dataset.preset; state.f.tot = D.HUIDIG; state.f.van = k === 'm' ? D.HUIDIG : KEYS.at(-(k === '3' ? 3 : 12)); render(); });
+  }
+  const kpi = (lbl, val, cur, prev, opts = {}) => `<div class="card c3 kpi ${opts.drill ? 'clickable' : ''}" ${opts.drill ? drillAttr(opts.drill) : ''}><div class="lbl">${lbl}${opts.drill ? ' <span class="drillhint">drilldown ›</span>' : ''}</div><div class="val">${val}</div>${delta(cur, prev, opts)}<span class="vs">vs. ${opts.vs || 'vorige periode'}</span></div>`;
 
   // ----- Management -----
   function pageManagement() {
@@ -100,9 +107,9 @@
     const alerts = buildAlerts();
     return head('Management dashboard', `Kerncijfers ${mLabel(D.HUIDIG)} ten opzichte van ${mLabel(D.VORIG)}. Alle regio's, alle adviseurs.`) + `
       <div class="grid">
-        ${kpi('Omzet (orders)', eurK(cur.omzet), cur.omzet, prev.omzet, { vs: mLabel(D.VORIG) })}
-        ${kpi('Leads', num(cur.leads), cur.leads, prev.leads, { vs: mLabel(D.VORIG) })}
-        ${kpi('Conversie lead → order', pct(cur.conv, 1), cur.conv, prev.conv, { vs: mLabel(D.VORIG) })}
+        ${kpi('Omzet (orders)', eurK(cur.omzet), cur.omzet, prev.omzet, { vs: mLabel(D.VORIG), drill: { maand: D.HUIDIG } })}
+        ${kpi('Leads', num(cur.leads), cur.leads, prev.leads, { vs: mLabel(D.VORIG), drill: { maand: D.HUIDIG, _dim: 'leadsoort' } })}
+        ${kpi('Conversie lead → order', pct(cur.conv, 1), cur.conv, prev.conv, { vs: mLabel(D.VORIG), drill: { maand: D.HUIDIG, _dim: 'adviseur' } })}
         ${kpi('Orderportefeuille (open offertes)', eurK(open), open, openPrev, { vs: 'vorige week' })}
         <div class="card c8 stretch"><h3>Omzet en orders per maand</h3><div class="sub">Gesloten orders uit het bronsysteem, historisch vastgelegd in de reporting-database</div><div class="chart"><canvas id="chOmzet"></canvas></div></div>
         <div class="card c4"><h3>Belangrijkste afwijkingen</h3><div class="sub">Automatisch gesignaleerd t.o.v. vorige periode</div><div class="alerts">${alerts.map(a => `<div class="alert ${a.type}"><div><b>${a.title}</b><span>${a.body}</span></div><button data-ask="${a.q}">✦ Vraag CoPilot</button></div>`).join('')}</div></div>
@@ -130,15 +137,15 @@
   }
   afterRender.management = () => {
     const byM = D.MAANDEN.map(m => stats(inMonths(D.LEADS, [m.key])));
-    mk('chOmzet', { data: { labels: D.MAANDEN.map(m => m.label), datasets: [{ type: 'bar', label: 'Omzet', data: byM.map(s => s.omzet), backgroundColor: COLORS[0], borderRadius: 4, yAxisID: 'y' }, { type: 'line', label: 'Orders', data: byM.map(s => s.orders), borderColor: COLORS[1], backgroundColor: COLORS[1], tension: .3, pointRadius: 3, yAxisID: 'y1' }] }, options: { maintainAspectRatio: false, scales: { x: { grid: { display: false } }, y: { grid: { color: '#f0f1f3' }, border: { display: false }, ticks: { callback: v => eurK(v) } }, y1: { position: 'right', grid: { display: false }, border: { display: false } } }, plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.dataset.label === 'Omzet' ? eur(c.raw) : c.raw}` } } } } });
+    mk('chOmzet', { data: { labels: D.MAANDEN.map(m => m.label), datasets: [{ type: 'bar', label: 'Omzet', data: byM.map(s => s.omzet), backgroundColor: COLORS[0], borderRadius: 4, yAxisID: 'y' }, { type: 'line', label: 'Orders', data: byM.map(s => s.orders), borderColor: COLORS[1], backgroundColor: COLORS[1], tension: .3, pointRadius: 3, yAxisID: 'y1' }] }, options: { maintainAspectRatio: false, onClick: (e, els) => { if (els.length) openDrill({ maand: D.MAANDEN[els[0].index].key }); }, onHover: (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; }, scales: { x: { grid: { display: false } }, y: { grid: { color: '#f0f1f3' }, border: { display: false }, ticks: { callback: v => eurK(v) } }, y1: { position: 'right', grid: { display: false }, border: { display: false } } }, plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.dataset.label === 'Omzet' ? eur(c.raw) : c.raw}` } } } } });
     const regs = D.REGIOS.filter(r => regioCap(r.naam) > 0).map(r => r.naam);
     const cur = inMonths(D.LEADS, [D.HUIDIG]);
-    mk('chCap', { type: 'bar', data: { labels: regs, datasets: [{ label: 'Afspraken', data: regs.map(r => cur.filter(l => l.regio === r && l.stage >= 1).length), backgroundColor: COLORS[0], borderRadius: 4 }, { label: 'Capaciteit (slots)', data: regs.map(r => Math.round(regioCap(r))), backgroundColor: '#d9dde6', borderRadius: 4 }] }, options: { maintainAspectRatio: false, scales: axis() } });
+    mk('chCap', { type: 'bar', data: { labels: regs, datasets: [{ label: 'Afspraken', data: regs.map(r => cur.filter(l => l.regio === r && l.stage >= 1).length), backgroundColor: COLORS[0], borderRadius: 4 }, { label: 'Capaciteit (slots)', data: regs.map(r => Math.round(regioCap(r))), backgroundColor: '#d9dde6', borderRadius: 4 }] }, options: { maintainAspectRatio: false, onClick: (e, els) => { if (els.length) openDrill({ regio: regs[els[0].index], maand: D.HUIDIG }); }, onHover: (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; }, scales: axis() } });
   };
 
   // ----- Sales -----
   function pageSales() {
-    const months = periodMonths(state.f.periode), pm = prevMonths(months);
+    const months = periodMonths(), pm = prevMonths(months);
     const base = scoped();
     const cur = applyFilters(inMonths(base, months)), prev = applyFilters(inMonths(base, pm));
     const s = stats(cur), p = stats(prev);
@@ -148,18 +155,18 @@
     const rows = advs.map(a => { const c = stats(cur.filter(l => l.adviseur === a.id)), pv = stats(prev.filter(l => l.adviseur === a.id)); const conv = c.afspraken ? c.offertes / c.afspraken : 0, convP = pv.afspraken ? pv.offertes / pv.afspraken : 0; return { a, c, pv, conv, convP, d: conv - convP }; }).sort((x, y) => y.c.omzet - x.c.omzet);
     return head('Sales & commercie', 'Omzet, conversie en uitval. Filterbaar op periode, leadsoort, adviseur en product.', filters) + `
       <div class="grid">
-        ${kpi('Leads', num(s.leads), s.leads, p.leads)}${kpi('Offertes', num(s.offertes), s.offertes, p.offertes)}${kpi('Orders', num(s.orders), s.orders, p.orders)}${kpi('Omzet', eurK(s.omzet), s.omzet, p.omzet)}
+        ${kpi('Leads', num(s.leads), s.leads, p.leads, { drill: { _dim: 'leadsoort' } })}${kpi('Offertes', num(s.offertes), s.offertes, p.offertes, { drill: { _dim: 'adviseur' } })}${kpi('Orders', num(s.orders), s.orders, p.orders, { drill: { _dim: 'product' } })}${kpi('Omzet', eurK(s.omzet), s.omzet, p.omzet, { drill: { _dim: 'product' } })}
         <div class="card c5" style="grid-column: span 5"><h3>Funnel</h3><div class="sub">Conversie per stap t.o.v. vorige periode</div>${funnelHtml(cur, prev)}</div>
         <div class="card c7" style="grid-column: span 7"><h3>Uitval per stap, per leadsoort</h3><div class="sub">Waar in de funnel haken leads af?</div><div class="chart"><canvas id="chUitval"></canvas></div></div>
         <div class="card c12"><h3>Per adviseur</h3><div class="sub">Conversie afspraak → offerte is de stap die deze periode het meest beweegt</div>
           <table><thead><tr><th>Adviseur</th><th>Regio</th><th class="num">Leads</th><th class="num">Afspraken</th><th class="num">Offertes</th><th class="num">Orders</th><th class="num">Omzet</th><th class="num">Afspraak → offerte</th><th class="num">Δ vs. vorige</th></tr></thead><tbody>
-          ${rows.map(r => `<tr><td><b>${r.a.naam}</b></td><td>${r.a.regio}</td><td class="num">${r.c.leads}</td><td class="num">${r.c.afspraken}</td><td class="num">${r.c.offertes}</td><td class="num">${r.c.orders}</td><td class="num">${eur(r.c.omzet)}</td><td class="num">${pct(r.conv)}</td><td class="num"><span class="tag ${r.d < -0.05 ? 'bad' : r.d > 0.05 ? 'good' : ''}">${pm.length ? `${r.d >= 0 ? '+' : ''}${(r.d * 100).toFixed(0)}pt` : '–'}</span></td></tr>`).join('')}
+          ${rows.map(r => `<tr class="drillrow" ${drillAttr({ adviseur: r.a.id })}><td><b>${r.a.naam}</b></td><td>${r.a.regio}</td><td class="num">${r.c.leads}</td><td class="num">${r.c.afspraken}</td><td class="num">${r.c.offertes}</td><td class="num">${r.c.orders}</td><td class="num">${eur(r.c.omzet)}</td><td class="num">${pct(r.conv)}</td><td class="num"><span class="tag ${r.d < -0.05 ? 'bad' : r.d > 0.05 ? 'good' : ''}">${pm.length ? `${r.d >= 0 ? '+' : ''}${(r.d * 100).toFixed(0)}pt` : '–'}</span></td></tr>`).join('')}
           </tbody></table></div>
         <div class="card c12"><h3>Omzet per leadsoort over tijd</h3><div class="sub">Laatste 13 maanden · ${role().eigen ? 'eigen leads' : 'alle adviseurs'}</div><div class="chart"><canvas id="chLeadsoort"></canvas></div></div>
       </div>`;
   }
   afterRender.sales = () => {
-    const months = periodMonths(state.f.periode); const cur = applyFilters(inMonths(scoped(), months));
+    const months = periodMonths(); const cur = applyFilters(inMonths(scoped(), months));
     const steps = ['Lead → afspraak', 'Afspraak → opname', 'Opname → offerte', 'Offerte → order'];
     mk('chUitval', { type: 'bar', data: { labels: steps, datasets: D.LEADSOORTEN.map((ls, i) => ({ label: ls, data: steps.map((_, si) => { const g = cur.filter(l => l.leadsoort === ls); const a = g.filter(l => l.stage >= si).length, b = g.filter(l => l.stage >= si + 1).length; return a ? +((1 - b / a) * 100).toFixed(1) : 0; }), backgroundColor: COLORS[i], borderRadius: 3 })) }, options: { maintainAspectRatio: false, scales: axis(v => v + '%'), plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.raw}% uitval` } } } } });
     const base = applyFilters(scoped());
@@ -172,7 +179,7 @@
     return D.PRODUCTEN.map(p => { const f = l => l.stage >= 4 && l.items.includes(p.naam); const a = sum(inMonths(D.LEADS, last3).filter(f), l => l.waarde / l.items.length), b = sum(inMonths(D.LEADS, prev3).filter(f), l => l.waarde / l.items.length); return { p, cur: a, prev: b, g: b ? (a - b) / b : 0 }; }).sort((x, y) => y.g - x.g);
   }
   function pageProduct() {
-    const months = periodMonths(state.f.periode), pm = prevMonths(months);
+    const months = periodMonths(), pm = prevMonths(months);
     const cur = inMonths(D.LEADS, months).filter(l => l.stage >= 4), prev = inMonths(D.LEADS, pm).filter(l => l.stage >= 4);
     const per = D.PRODUCTEN.map(p => { const f = l => l.items.includes(p.naam); const c = cur.filter(f), pv = prev.filter(f); const om = sum(c, l => l.waarde / l.items.length); return { p, n: c.length, omzet: om, prevOmzet: sum(pv, l => l.waarde / l.items.length), marge: om * p.marge }; }).sort((a, b) => b.omzet - a.omzet);
     const combos = {}; cur.filter(l => l.items.length > 1).forEach(l => { const k = l.items.slice().sort().join(' + '); combos[k] = (combos[k] || 0) + 1; });
@@ -182,18 +189,18 @@
     return head('Productanalyse', 'Welke producten en combinaties verkopen goed, waar zitten de marges en hoe ontwikkelt dit zich?', periodeSelect()) + `
       <div class="grid">
         <div class="card c7" style="grid-column: span 7"><h3>Omzet per product</h3><div class="sub">Geselecteerde periode · aandeel in omzet</div><div class="chart"><canvas id="chProd"></canvas></div></div>
-        <div class="card c5" style="grid-column: span 5"><h3>Groei laatste 3 maanden</h3><div class="sub">T.o.v. de 3 maanden ervoor</div><table><thead><tr><th>Product</th><th class="num">Omzet</th><th class="num">Groei</th></tr></thead><tbody>${growth.map(g => `<tr><td>${g.p.naam}</td><td class="num">${eurK(g.cur)}</td><td class="num"><span class="tag ${g.g > 0.08 ? 'good' : g.g < -0.08 ? 'bad' : ''}">${g.g >= 0 ? '+' : ''}${pct(g.g, 0)}</span></td></tr>`).join('')}</tbody></table></div>
+        <div class="card c5" style="grid-column: span 5"><h3>Groei laatste 3 maanden</h3><div class="sub">T.o.v. de 3 maanden ervoor</div><table><thead><tr><th>Product</th><th class="num">Omzet</th><th class="num">Groei</th></tr></thead><tbody>${growth.map(g => `<tr class="drillrow" ${drillAttr({ product: g.p.naam })}><td>${g.p.naam}</td><td class="num">${eurK(g.cur)}</td><td class="num"><span class="tag ${g.g > 0.08 ? 'good' : g.g < -0.08 ? 'bad' : ''}">${g.g >= 0 ? '+' : ''}${pct(g.g, 0)}</span></td></tr>`).join('')}</tbody></table></div>
         <div class="card c7" style="grid-column: span 7"><h3>Producttabel</h3><div class="sub">${m ? 'Inclusief marge (alleen zichtbaar voor Directie)' : 'Marges zijn niet zichtbaar voor jouw rol'}</div>
           <table><thead><tr><th>Product</th><th class="num">Orders</th><th class="num">Omzet</th><th class="num">Δ</th>${m ? '<th class="num">Marge €</th><th class="num">Marge %</th>' : ''}</tr></thead><tbody>
-          ${per.map(x => `<tr><td><b>${x.p.naam}</b></td><td class="num">${x.n}</td><td class="num">${eur(x.omzet)}</td><td class="num">${delta(x.omzet, x.prevOmzet)}</td>${m ? `<td class="num">${eur(x.marge)}</td><td class="num">${pct(x.p.marge)}</td>` : ''}</tr>`).join('')}</tbody></table></div>
+          ${per.map(x => `<tr class="drillrow" ${drillAttr({ product: x.p.naam })}><td><b>${x.p.naam}</b></td><td class="num">${x.n}</td><td class="num">${eur(x.omzet)}</td><td class="num">${delta(x.omzet, x.prevOmzet)}</td>${m ? `<td class="num">${eur(x.marge)}</td><td class="num">${pct(x.p.marge)}</td>` : ''}</tr>`).join('')}</tbody></table></div>
         <div class="card c5" style="grid-column: span 5"><h3>Productcombinaties</h3><div class="sub">Meest verkochte combinaties in één order</div><table><thead><tr><th>Combinatie</th><th class="num">Orders</th></tr></thead><tbody>${topCombos.map(([k, n]) => `<tr><td>${k}</td><td class="num">${n} <span class="bar" style="width:${n / topCombos[0][1] * 60}px"></span></td></tr>`).join('')}</tbody></table></div>
         <div class="card c12"><h3>Ontwikkeling per product</h3><div class="sub">Omzet per maand, laatste 13 maanden</div><div class="chart tall"><canvas id="chProdTrend"></canvas></div></div>
       </div>`;
   }
   afterRender.product = () => {
-    const months = periodMonths(state.f.periode); const cur = inMonths(D.LEADS, months).filter(l => l.stage >= 4);
+    const months = periodMonths(); const cur = inMonths(D.LEADS, months).filter(l => l.stage >= 4);
     const per = D.PRODUCTEN.map(p => ({ p, omzet: sum(cur.filter(l => l.items.includes(p.naam)), l => l.waarde / l.items.length) })).sort((a, b) => b.omzet - a.omzet);
-    mk('chProd', { type: 'bar', data: { labels: per.map(x => x.p.naam), datasets: [{ data: per.map(x => x.omzet), backgroundColor: per.map((_, i) => i === 0 ? COLORS[0] : '#9db4ff'), borderRadius: 4 }] }, options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => eur(c.raw) } } }, scales: { x: { grid: { color: '#f0f1f3' }, border: { display: false }, ticks: { callback: v => eurK(v) } }, y: { grid: { display: false } } } } });
+    mk('chProd', { type: 'bar', data: { labels: per.map(x => x.p.naam), datasets: [{ data: per.map(x => x.omzet), backgroundColor: per.map((_, i) => i === 0 ? COLORS[0] : '#9db4ff'), borderRadius: 4 }] }, options: { indexAxis: 'y', maintainAspectRatio: false, onClick: (e, els) => { if (els.length) openDrill({ product: per[els[0].index].p.naam }); }, onHover: (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => eur(c.raw) } } }, scales: { x: { grid: { color: '#f0f1f3' }, border: { display: false }, ticks: { callback: v => eurK(v) } }, y: { grid: { display: false } } } } });
     const top = D.PRODUCTEN.slice().sort((a, b) => b.w - a.w).slice(0, 6);
     mk('chProdTrend', { type: 'line', data: { labels: D.MAANDEN.map(m => m.label), datasets: top.map((p, i) => ({ label: p.naam, data: D.MAANDEN.map(m => sum(D.LEADS.filter(l => l.maand === m.key && l.stage >= 4 && l.items.includes(p.naam)), l => l.waarde / l.items.length)), borderColor: COLORS[i], backgroundColor: COLORS[i], tension: .3, pointRadius: 2 })) }, options: { maintainAspectRatio: false, scales: axis(v => eurK(v)), plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${eur(c.raw)}` } } } } });
   };
@@ -205,21 +212,21 @@
   }
   const ratioColor = x => x === Infinity ? '#7a1f1f' : x > 1.3 ? '#d23c3c' : x > 0.9 ? '#e8892b' : x > 0.6 ? '#1f5eff' : '#7c9cf5';
   function pageRegio() {
-    const months = periodMonths(state.f.periode); const rows = regioRows(months).sort((a, b) => b.ratio - a.ratio);
+    const months = periodMonths(); const rows = regioRows(months).sort((a, b) => b.ratio - a.ratio);
     return head('Regionale analyse', 'Leads, verkopen en conversie geografisch afgezet tegen de capaciteit van adviseurs.', periodeSelect()) + `
       <div class="grid">
         <div class="card c5" style="grid-column: span 5"><h3>Vraag versus capaciteit</h3><div class="sub">Leads per beschikbaar afspraakslot, per provincie</div>
-          <div class="tiles">${D.REGIOS.map(r => { const x = rows.find(q => q.r.naam === r.naam); return `<div class="tile" style="grid-column:${r.col + 1};grid-row:${r.row + 1};background:${ratioColor(x.ratio)}" title="${r.naam}: ${x.s.leads} leads, capaciteit ${Math.round(x.cap)} slots"><b>${r.naam}</b><small>${x.s.leads} leads · ${x.advs ? x.ratio.toFixed(2) : 'geen adviseur'}</small></div>`; }).join('')}</div>
+          <div class="tiles">${D.REGIOS.map(r => { const x = rows.find(q => q.r.naam === r.naam); return `<div class="tile" ${drillAttr({ regio: r.naam })} style="grid-column:${r.col + 1};grid-row:${r.row + 1};background:${ratioColor(x.ratio)}" title="${r.naam}: ${x.s.leads} leads, capaciteit ${Math.round(x.cap)} slots"><b>${r.naam}</b><small>${x.s.leads} leads · ${x.advs ? x.ratio.toFixed(2) : 'geen adviseur'}</small></div>`; }).join('')}</div>
           <div class="legend"><span><i style="background:#7c9cf5"></i>ruimte</span><span><i style="background:#1f5eff"></i>in balans</span><span><i style="background:#e8892b"></i>krap</span><span><i style="background:#d23c3c"></i>tekort</span><span><i style="background:#7a1f1f"></i>geen eigen adviseur</span></div></div>
         <div class="card c7" style="grid-column: span 7"><h3>Leads en capaciteit per regio</h3><div class="sub">Regio's zonder eigen adviseur worden op afstand bediend: lagere conversie, langere doorlooptijd</div><div class="chart tall"><canvas id="chRegio"></canvas></div></div>
         <div class="card c12"><h3>Regiotabel</h3><div class="sub">Gesorteerd op druk (leads per slot)</div>
           <table><thead><tr><th>Regio</th><th class="num">Leads</th><th class="num">Afspraken</th><th class="num">Orders</th><th class="num">Conversie</th><th class="num">Omzet</th><th class="num">Adviseurs</th><th class="num">Capaciteit</th><th class="num">Leads / slot</th><th>Status</th></tr></thead><tbody>
-          ${rows.map(x => `<tr><td><b>${x.r.naam}</b></td><td class="num">${x.s.leads}</td><td class="num">${x.s.afspraken}</td><td class="num">${x.s.orders}</td><td class="num">${pct(x.s.conv, 1)}</td><td class="num">${eur(x.s.omzet)}</td><td class="num">${x.advs}</td><td class="num">${x.cap ? Math.round(x.cap) : '–'}</td><td class="num">${x.cap ? x.ratio.toFixed(2) : '∞'}</td><td>${x.cap === 0 ? '<span class="tag bad">geen eigen adviseur</span>' : x.ratio > 1.3 ? '<span class="tag bad">tekort</span>' : x.ratio > 0.9 ? '<span class="tag warn">krap</span>' : '<span class="tag good">in balans</span>'}</td></tr>`).join('')}</tbody></table></div>
+          ${rows.map(x => `<tr class="drillrow" ${drillAttr({ regio: x.r.naam })}><td><b>${x.r.naam}</b></td><td class="num">${x.s.leads}</td><td class="num">${x.s.afspraken}</td><td class="num">${x.s.orders}</td><td class="num">${pct(x.s.conv, 1)}</td><td class="num">${eur(x.s.omzet)}</td><td class="num">${x.advs}</td><td class="num">${x.cap ? Math.round(x.cap) : '–'}</td><td class="num">${x.cap ? x.ratio.toFixed(2) : '∞'}</td><td>${x.cap === 0 ? '<span class="tag bad">geen eigen adviseur</span>' : x.ratio > 1.3 ? '<span class="tag bad">tekort</span>' : x.ratio > 0.9 ? '<span class="tag warn">krap</span>' : '<span class="tag good">in balans</span>'}</td></tr>`).join('')}</tbody></table></div>
       </div>`;
   }
   afterRender.regio = () => {
-    const rows = regioRows(periodMonths(state.f.periode)).sort((a, b) => b.s.leads - a.s.leads);
-    mk('chRegio', { type: 'bar', data: { labels: rows.map(x => x.r.naam), datasets: [{ label: 'Leads', data: rows.map(x => x.s.leads), backgroundColor: COLORS[0], borderRadius: 3 }, { label: 'Capaciteit (slots)', data: rows.map(x => Math.round(x.cap)), backgroundColor: '#d9dde6', borderRadius: 3 }, { label: 'Orders', data: rows.map(x => x.s.orders), backgroundColor: COLORS[2], borderRadius: 3 }] }, options: { maintainAspectRatio: false, scales: axis() } });
+    const rows = regioRows(periodMonths()).sort((a, b) => b.s.leads - a.s.leads);
+    mk('chRegio', { type: 'bar', data: { labels: rows.map(x => x.r.naam), datasets: [{ label: 'Leads', data: rows.map(x => x.s.leads), backgroundColor: COLORS[0], borderRadius: 3 }, { label: 'Capaciteit (slots)', data: rows.map(x => Math.round(x.cap)), backgroundColor: '#d9dde6', borderRadius: 3 }, { label: 'Orders', data: rows.map(x => x.s.orders), backgroundColor: COLORS[2], borderRadius: 3 }] }, options: { maintainAspectRatio: false, onClick: (e, els) => { if (els.length) openDrill({ regio: rows[els[0].index].r.naam }); }, onHover: (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; }, scales: axis() } });
   };
 
   // ----- Pipeline -----
@@ -281,6 +288,57 @@
             <div><b>Eén omgeving, één rechtenset</b><p class="hint">Geen rapport-niveau rechten zoals bij losse BI-tools, maar pagina- en datasetniveau, voor mens én CoPilot.</p></div>
           </div></div>
       </div>`;
+  }
+
+
+  // ---------- Drilldown ----------
+  const DIMS = { adviseur: 'Adviseur', product: 'Product', regio: 'Regio', leadsoort: 'Leadsoort', maand: 'Maand' };
+  const dimLabel = (k, v) => k === 'adviseur' ? advNaam(v) : k === 'maand' ? mLabel(v) : v;
+  let drillStack = [];
+  const ctxFilter = (leads, ctx) => leads.filter(l => Object.entries(ctx).every(([k, v]) => k === 'product' ? l.items.includes(v) : l[k] === v));
+  const drillAttr = ctx => `data-drill='${JSON.stringify(ctx).replace(/'/g, '&#39;')}'`;
+  function openDrill(ctx, push = true) {
+    if (role().eigen && ctx.adviseur && ctx.adviseur !== role().adviseurId) return;
+    if (push) drillStack.push(ctx); else drillStack[drillStack.length - 1] = ctx;
+    renderDrill();
+  }
+  function closeDrill() { drillStack = []; $('#drill').hidden = true; $('#drillBack').hidden = true; charts.filter(c => c.canvas.closest('#drill')).forEach(c => c.destroy()); charts = charts.filter(c => !c.canvas.closest('#drill')); }
+  function renderDrill() {
+    charts.filter(c => c.canvas.closest('#drill')).forEach(c => c.destroy()); charts = charts.filter(c => !c.canvas.closest('#drill'));
+    const ctx = drillStack.at(-1); const dim = ctx._dim || Object.keys(DIMS).find(k => !(k in ctx));
+    const months = ctx.maand ? [ctx.maand] : periodMonths(); const pm = prevMonths(months);
+    const base = ctxFilter(applyFilters(scoped()), Object.fromEntries(Object.entries(ctx).filter(([k]) => k !== 'maand' && k !== '_dim')));
+    const cur = inMonths(base, months), prev = inMonths(base, pm); const s = stats(cur), p = stats(prev);
+    const crumbs = drillStack.map((c, i) => `<button class="crumb ${i === drillStack.length - 1 ? 'on' : ''}" data-crumb="${i}">${Object.entries(c).filter(([k]) => k !== '_dim').map(([k, v]) => dimLabel(k, v)).join(' · ') || 'Alles'}</button>`).join('<span class="crumb-sep">›</span>');
+    const title = Object.entries(ctx).filter(([k]) => k !== '_dim').map(([k, v]) => dimLabel(k, v)).join(' · ') || 'Totaal';
+    const rows = Object.entries(groupBy(cur, l => dim === 'product' ? l.items[0] : l[dim])).map(([k, g]) => ({ k, s: stats(g), p: stats(prev.filter(l => (dim === 'product' ? l.items[0] : l[dim]) === k)) })).sort((a, b) => dim === 'maand' ? a.k.localeCompare(b.k) : b.s.omzet - a.s.omzet);
+    const recs = cur.slice().sort((a, b) => b.stage - a.stage || b.waarde - a.waarde).slice(0, 40);
+    const stageTag = st => `<span class="tag ${st >= 4 ? 'good' : st === 3 ? 'warn' : ''}">${D.STAGES[st]}</span>`;
+    $('#drillBody').innerHTML = `
+      <div class="crumbs">${crumbs}</div>
+      <h2>${title}</h2><p class="hint">${months.length === 1 ? mLabel(months[0]) : `${mLabel(months[0])} t/m ${mLabel(months.at(-1))}`} · ${num(cur.length)} leads${pm.length ? ` · vergeleken met ${months.length === 1 ? mLabel(pm[0]) : `${mLabel(pm[0])} t/m ${mLabel(pm.at(-1))}`}` : ''}</p>
+      <div class="dkpis">
+        <div><span>Leads</span><b>${num(s.leads)}</b>${delta(s.leads, p.leads)}</div>
+        <div><span>Offertes</span><b>${num(s.offertes)}</b>${delta(s.offertes, p.offertes)}</div>
+        <div><span>Orders</span><b>${num(s.orders)}</b>${delta(s.orders, p.orders)}</div>
+        <div><span>Omzet</span><b>${eurK(s.omzet)}</b>${delta(s.omzet, p.omzet)}</div>
+        <div><span>Conversie</span><b>${pct(s.conv, 1)}</b>${delta(s.conv, p.conv)}</div>
+        ${role().marge ? `<div><span>Marge</span><b>${eurK(s.marge)}</b>${delta(s.marge, p.marge)}</div>` : ''}
+      </div>
+      <div class="dgrid">
+        <div class="card"><h3>Funnel</h3><div class="sub">Conversie per stap t.o.v. vorige periode</div>${funnelHtml(cur, prev)}</div>
+        <div class="card"><h3>Ontwikkeling</h3><div class="sub">Omzet en leads per maand voor deze selectie</div><div class="chart short"><canvas id="chDrill"></canvas></div></div>
+      </div>
+      <div class="card"><div class="dhead"><div><h3>Uitsplitsen naar</h3><div class="sub">Klik een rij om verder in te zoomen</div></div><div class="dimchips">${Object.entries(DIMS).filter(([k]) => !(k in ctx) || k === '_dim').map(([k, l]) => `<button class="chip ${k === dim ? 'on' : ''}" data-dim="${k}">${l}</button>`).join('')}</div></div>
+        <table><thead><tr><th>${DIMS[dim]}</th><th class="num">Leads</th><th class="num">Afspraken</th><th class="num">Offertes</th><th class="num">Orders</th><th class="num">Conversie</th><th class="num">Omzet</th><th class="num">Δ omzet</th><th></th></tr></thead><tbody>
+        ${rows.map(r => `<tr class="drillrow" ${drillAttr({ ...Object.fromEntries(Object.entries(ctx).filter(([k]) => k !== '_dim')), [dim]: r.k })}><td><b>${dimLabel(dim, r.k)}</b></td><td class="num">${r.s.leads}</td><td class="num">${r.s.afspraken}</td><td class="num">${r.s.offertes}</td><td class="num">${r.s.orders}</td><td class="num">${pct(r.s.conv, 1)}</td><td class="num">${eur(r.s.omzet)} <span class="bar" style="width:${rows[0].s.omzet ? r.s.omzet / Math.max(...rows.map(x => x.s.omzet)) * 50 : 0}px"></span></td><td class="num">${r.p.omzet < 3000 ? '<span class="delta flat">–</span>' : delta(r.s.omzet, r.p.omzet)}</td><td class="num" style="color:var(--muted)">›</td></tr>`).join('')}</tbody></table></div>
+      <div class="card"><h3>Onderliggende records</h3><div class="sub">${recs.length < cur.length ? `Top ${recs.length} van ${num(cur.length)}, gesorteerd op funnelstap en waarde` : `${cur.length} leads uit het bronsysteem`}</div>
+        <div style="overflow-x:auto"><table class="recs"><thead><tr><th>#</th><th>Maand</th><th>Adviseur</th><th>Regio</th><th>Leadsoort</th><th>Producten</th><th>Stap</th><th class="num">Waarde</th></tr></thead><tbody>
+        ${recs.map(l => `<tr><td class="mono">L-${String(l.id).padStart(5, '0')}</td><td>${mLabel(l.maand)}</td><td>${advNaam(l.adviseur)}</td><td>${l.regio}${l.extern ? ' <span class="tag">op afstand</span>' : ''}</td><td>${l.leadsoort}</td><td>${l.items.join(' + ')}</td><td>${stageTag(l.stage)}</td><td class="num">${l.waarde ? eur(l.waarde) : '–'}</td></tr>`).join('')}</tbody></table></div></div>`;
+    $('#drill').hidden = false; $('#drillBack').hidden = false; $('#drill').scrollTop = 0;
+    const trendMonths = ctx.maand ? KEYS : KEYS;
+    const byM = trendMonths.map(m => stats(base.filter(l => l.maand === m)));
+    mk('chDrill', { data: { labels: trendMonths.map(mLabel), datasets: [{ type: 'bar', label: 'Omzet', data: byM.map(x => x.omzet), backgroundColor: trendMonths.map(m => months.includes(m) ? COLORS[0] : '#c9d3f5'), borderRadius: 3, yAxisID: 'y' }, { type: 'line', label: 'Leads', data: byM.map(x => x.leads), borderColor: COLORS[1], backgroundColor: COLORS[1], tension: .3, pointRadius: 2, yAxisID: 'y1' }] }, options: { maintainAspectRatio: false, onClick: (e, els) => { if (els.length) openDrill({ ...Object.fromEntries(Object.entries(ctx).filter(([k]) => k !== '_dim' && k !== 'maand')), maand: trendMonths[els[0].index] }); }, scales: { x: { grid: { display: false }, ticks: { font: { size: 10 } } }, y: { grid: { color: '#f0f1f3' }, border: { display: false }, ticks: { callback: v => eurK(v), font: { size: 10 } } }, y1: { position: 'right', grid: { display: false }, border: { display: false }, ticks: { font: { size: 10 } } } }, plugins: { legend: { labels: { font: { size: 10 } } }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.dataset.label === 'Omzet' ? eur(c.raw) : c.raw}` } } } } });
   }
 
   // ---------- CoPilot ----------
@@ -363,9 +421,14 @@
   // ---------- Events ----------
   document.addEventListener('click', e => {
     const a = e.target.closest('[data-ask]'); if (a) { openCopilot(a.dataset.ask); return; }
-    const n = e.target.closest('.nav'); if (n && !n.disabled) { state.page = n.dataset.page; render(); }
+    const d = e.target.closest('[data-drill]'); if (d) { openDrill(JSON.parse(d.dataset.drill)); return; }
+    const cr = e.target.closest('[data-crumb]'); if (cr) { drillStack = drillStack.slice(0, +cr.dataset.crumb + 1); renderDrill(); return; }
+    const dm = e.target.closest('[data-dim]'); if (dm) { drillStack.at(-1)._dim = dm.dataset.dim; renderDrill(); return; }
+    if (e.target.closest('#drillBack') || e.target.closest('#closeDrill')) { closeDrill(); return; }
+    const n = e.target.closest('.nav'); if (n && !n.disabled) { state.page = n.dataset.page; closeDrill(); render(); }
   });
-  $('#role').onchange = e => { state.role = e.target.value; state.f.adviseur = ''; resetCopilot(); render(); };
+  $('#role').onchange = e => { state.role = e.target.value; state.f.adviseur = ''; closeDrill(); resetCopilot(); render(); };
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#drill').hidden) closeDrill(); });
   $('#toggleCopilot').onclick = () => $('#copilot').hidden ? openCopilot() : closeCopilot();
   $('#closeCopilot').onclick = () => closeCopilot();
   function closeCopilot() { $('#copilot').hidden = true; $('#app').classList.remove('copilot-open'); charts.forEach(c => c.resize()); }
@@ -378,5 +441,6 @@
   resetCopilot();
   render();
   if (h.get('ask')) openCopilot(h.get('ask'));
+  if (h.get('drill')) { try { openDrill(JSON.parse(h.get('drill'))); } catch (e) { } }
   else if (h.get('copilot')) openCopilot();
 })();
