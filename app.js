@@ -28,22 +28,22 @@
     const d = (cur - prev) / prev; const up = d >= 0; const good = opts.invert ? !up : up;
     return `<span class="${Math.abs(d) < 0.005 ? 'dim' : good ? 'pos' : 'neg'}">${up ? '+' : '−'}${pct(Math.abs(d), 1)}</span>`;
   };
-  const INK = '#111318', ACC = '#2457e6', GREY = '#d5d8de';
-  const PAL = ['#111318', '#2457e6', '#8a94a6', '#c3c8d2', '#5b7fe8', '#6f7480', '#9fb3f0', '#e3e6eb'];
+  const INK = '#2e7d74', ACC = '#8b919c', GREY = '#dfe2e6', SOFT = '#c5e0dc', BAD = '#c2604f';
+  const PAL = ['#2e7d74', '#6fb0a7', '#a9d1cb', '#d6e9e6', '#8b919c', '#b3b8c1', '#d3d6dc', '#ebedf0'];
   const role = () => ROLES[state.role];
 
-  Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+  Chart.defaults.font.family = "'Geist', system-ui, sans-serif";
   Chart.defaults.font.size = 11.5;
-  Chart.defaults.color = '#6f7480';
+  Chart.defaults.color = '#8b919c';
   Chart.defaults.plugins.legend.position = 'bottom';
   Chart.defaults.plugins.legend.labels.boxWidth = 8;
   Chart.defaults.plugins.legend.labels.boxHeight = 8;
   Chart.defaults.plugins.legend.labels.usePointStyle = true;
   Chart.defaults.plugins.legend.labels.padding = 16;
-  Chart.defaults.plugins.tooltip.backgroundColor = '#111318';
+  Chart.defaults.plugins.tooltip.backgroundColor = '#25292f';
   Chart.defaults.plugins.tooltip.padding = 10;
   Chart.defaults.plugins.tooltip.cornerRadius = 6;
-  const yAxis = (fmt, extra = {}) => ({ grid: { color: '#f3f4f6' }, border: { display: false }, ticks: { callback: fmt || (v => v), maxTicksLimit: 6 }, ...extra });
+  const yAxis = (fmt, extra = {}) => ({ grid: { color: '#eef0f2' }, border: { display: false }, ticks: { callback: fmt || (v => v), maxTicksLimit: 6 }, ...extra });
   const xAxis = () => ({ grid: { display: false }, border: { display: false } });
   const pointer = (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; };
   function mk(id, cfg) { const el = document.getElementById(id); if (!el) return; const c = new Chart(el, cfg); charts.push(c); return c; }
@@ -142,8 +142,8 @@
   function monthlyHero(id, base, months, opts) {
     const byM = KEYS.map(m => stats(base.filter(l => l.maand === m)));
     const on = m => months.includes(m);
-    const ds = opts.stack ? opts.stack.map((g, i) => ({ type: 'bar', label: g.label, data: KEYS.map(m => sum(base.filter(l => l.maand === m && l.stage >= 4 && g.f(l)), l => l.waarde / (g.split ? l.items.length : 1))), backgroundColor: KEYS.map(m => on(m) ? PAL[i] : PAL[i] + '55'), borderRadius: 2, stack: 's' }))
-      : [{ type: 'bar', label: 'Omzet', data: byM.map(x => x.omzet), backgroundColor: KEYS.map(m => on(m) ? INK : GREY), borderRadius: 3, yAxisID: 'y' }, { type: 'line', label: 'Leads', data: byM.map(x => x.leads), borderColor: ACC, backgroundColor: ACC, tension: .35, pointRadius: KEYS.map(m => on(m) ? 3 : 0), borderWidth: 1.5, yAxisID: 'y1' }];
+    const ds = opts.stack ? opts.stack.map((g, i) => ({ type: 'bar', label: g.label, data: KEYS.map(m => sum(base.filter(l => l.maand === m && l.stage >= 4 && g.f(l)), l => l.waarde / (g.split ? l.items.length : 1))), backgroundColor: KEYS.map(m => on(m) ? PAL[i] : PAL[i] + '66'), borderRadius: 2, stack: 's' }))
+      : [{ type: 'bar', label: 'Omzet', data: byM.map(x => x.omzet), backgroundColor: KEYS.map(m => on(m) ? INK : GREY), borderRadius: 3, yAxisID: 'y' }, { type: 'line', label: 'Leads', data: byM.map(x => x.leads), borderColor: ACC, backgroundColor: ACC, tension: .35, pointRadius: KEYS.map(m => on(m) ? 3 : 0), borderWidth: 1.25, borderDash: [0], yAxisID: 'y1' }];
     mk(id, { data: { labels: KEYS.map(mLabel), datasets: ds }, options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, onClick: (e, els) => { if (els.length) setFilter('maand', KEYS[els[0].index]); }, onHover: pointer, scales: { x: { ...xAxis(), stacked: !!opts.stack }, y: { ...yAxis(v => eurK(v)), stacked: !!opts.stack }, ...(opts.stack ? {} : { y1: { position: 'right', grid: { display: false }, border: { display: false }, ticks: { maxTicksLimit: 6 } } }) }, plugins: { legend: { display: true }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.dataset.label === 'Leads' ? c.raw : eur(c.raw)}` } } } } });
   }
 
@@ -254,7 +254,7 @@
     const cur = inMonths(filtered(), months);
     return D.REGIOS.map(r => { const g = cur.filter(l => l.regio === r.naam); const s = stats(g); const cap = regioCap(r.naam) * months.length; const advs = D.ADVISEURS.filter(a => a.regio === r.naam).length; return { r, s, cap, advs, ratio: cap ? s.leads / cap : Infinity }; });
   }
-  const ratioColor = x => x === Infinity ? '#111318' : x > 1.3 ? '#d92d20' : x > 0.9 ? '#e8892b' : x > 0.6 ? '#2457e6' : '#9fb3f0';
+  const ratioColor = x => x === Infinity ? '#6b7280' : x > 1.3 ? '#c2604f' : x > 0.9 ? '#d1a259' : x > 0.6 ? '#2e7d74' : '#9cc9c2';
   function pageRegio() {
     const months = periodMonths(), pm = prevMonths(months); const rows = regioRows(months).sort((a, b) => b.ratio - a.ratio);
     const cur = inMonths(filtered(), months), prev = inMonths(filtered(), pm); const s = stats(cur), p = stats(prev);
@@ -272,7 +272,7 @@
       <div class="row">
         <div class="card c4">${cardhead('Vraag versus capaciteit', 'Leads per beschikbaar afspraakslot')}
           <div class="tiles">${D.REGIOS.map(r => { const x = rows.find(q => q.r.naam === r.naam); return `<div class="tile" data-set="regio" data-val="${r.naam}" style="grid-column:${r.col + 1};grid-row:${r.row + 1};background:${ratioColor(x.ratio)}"><b>${r.naam}</b><small>${x.s.leads} · ${x.advs ? x.ratio.toFixed(2) : 'geen adviseur'}</small></div>`; }).join('')}</div>
-          <div class="legend"><span><i style="background:#9fb3f0"></i>ruimte</span><span><i style="background:#2457e6"></i>in balans</span><span><i style="background:#e8892b"></i>krap</span><span><i style="background:#d92d20"></i>tekort</span><span><i style="background:#111318"></i>geen eigen adviseur</span></div></div>
+          <div class="legend"><span><i style="background:#9cc9c2"></i>ruimte</span><span><i style="background:#2e7d74"></i>in balans</span><span><i style="background:#d1a259"></i>krap</span><span><i style="background:#c2604f"></i>tekort</span><span><i style="background:#6b7280"></i>geen eigen adviseur</span></div></div>
         <div class="card c8">${cardhead('Per regio', 'Gesorteerd op druk · klik op een regio om te filteren')}
           <table><thead><tr><th>Regio</th><th class="num">Leads</th><th class="num">Afspraken</th><th class="num">Orders</th><th class="num">Conversie</th><th class="num">Omzet</th><th class="num">Adviseurs</th><th class="num">Capaciteit</th><th class="num">Leads / slot</th><th></th></tr></thead><tbody>
           ${rows.map(x => `<tr class="drillrow" data-set="regio" data-val="${x.r.naam}"><td>${x.r.naam}</td><td class="num">${x.s.leads}</td><td class="num">${x.s.afspraken}</td><td class="num">${x.s.orders}</td><td class="num">${pct(x.s.conv, 1)}</td><td class="num">${eur(x.s.omzet)}</td><td class="num">${x.advs}</td><td class="num">${x.cap ? Math.round(x.cap) : '–'}</td><td class="num">${x.cap ? x.ratio.toFixed(2) : '∞'}</td><td>${x.cap === 0 ? '<span class="tag">geen eigen adviseur</span>' : x.ratio > 1.3 ? '<span class="tag bad">tekort</span>' : x.ratio > 0.9 ? '<span class="tag warn">krap</span>' : '<span class="tag good">in balans</span>'}</td></tr>`).join('')}</tbody></table></div>
@@ -281,7 +281,7 @@
   }
   afterRender.regio = () => {
     const rows = regioRows(periodMonths()).sort((a, b) => b.s.leads - a.s.leads);
-    mk('hero', { type: 'bar', data: { labels: rows.map(x => x.r.naam), datasets: [{ label: 'Leads', data: rows.map(x => x.s.leads), backgroundColor: INK, borderRadius: 3 }, { label: 'Capaciteit (slots)', data: rows.map(x => Math.round(x.cap)), backgroundColor: GREY, borderRadius: 3 }, { label: 'Orders', data: rows.map(x => x.s.orders), backgroundColor: ACC, borderRadius: 3 }] }, options: { maintainAspectRatio: false, onClick: (e, els) => { if (els.length) setFilter('regio', rows[els[0].index].r.naam); }, onHover: pointer, scales: { x: xAxis(), y: yAxis() } } });
+    mk('hero', { type: 'bar', data: { labels: rows.map(x => x.r.naam), datasets: [{ label: 'Leads', data: rows.map(x => x.s.leads), backgroundColor: INK, borderRadius: 3 }, { label: 'Capaciteit (slots)', data: rows.map(x => Math.round(x.cap)), backgroundColor: GREY, borderRadius: 3 }, { label: 'Orders', data: rows.map(x => x.s.orders), backgroundColor: SOFT, borderRadius: 3 }] }, options: { maintainAspectRatio: false, onClick: (e, els) => { if (els.length) setFilter('regio', rows[els[0].index].r.naam); }, onHover: pointer, scales: { x: xAxis(), y: yAxis() } } });
   };
 
   // ----- Pipeline -----
@@ -311,7 +311,7 @@
     const list = ams(); const S = D.SNAPSHOTS;
     mk('hero', { type: 'line', data: { labels: S.map(s => s.label), datasets: list.map((am, i) => ({ label: am, data: S.map(s => s.per[am].open), borderColor: PAL[i], backgroundColor: PAL[i] + '1f', fill: true, tension: .3, pointRadius: 0, borderWidth: 1.5 })) }, options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: xAxis(), y: { ...yAxis(v => eurK(v)), stacked: true } }, plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${eur(c.raw)}` } } } } });
     const last = S.at(-1), prev = S.at(-2); const t = k => sum(list, am => last.per[am][k]); const start = sum(list, am => prev.per[am].open);
-    let run = start; const steps = [['Start', [0, start], GREY]]; [['Nieuw', t('nieuw'), ACC], ['Gewonnen', -t('gewonnen'), '#9fb3f0'], ['Verloren', -t('verloren'), '#d92d20'], ['Gemuteerd', t('gemuteerd'), '#8a94a6']].forEach(([l, v, c]) => { steps.push([l, [run, run + v], c]); run += v; }); steps.push(['Eind', [0, run], INK]);
+    let run = start; const steps = [['Start', [0, start], GREY]]; [['Nieuw', t('nieuw'), INK], ['Gewonnen', -t('gewonnen'), SOFT], ['Verloren', -t('verloren'), BAD], ['Gemuteerd', t('gemuteerd'), '#b3b8c1']].forEach(([l, v, c]) => { steps.push([l, [run, run + v], c]); run += v; }); steps.push(['Eind', [0, run], '#8b919c']);
     mk('chWater', { type: 'bar', data: { labels: steps.map(s => s[0]), datasets: [{ data: steps.map(s => s[1]), backgroundColor: steps.map(s => s[2]), borderRadius: 3 }] }, options: { maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => eur(c.raw[1] - c.raw[0]) } } }, scales: { x: xAxis(), y: yAxis(v => eurK(v), { min: Math.floor(start * 0.8 / 1e5) * 1e5 }) } } });
   };
 
@@ -364,7 +364,7 @@
       let who = '';
       if (!r.eigen) { const advs = D.ADVISEURS.map(a => { const c = cur.filter(l => l.adviseur === a.id), pv = prev.filter(l => l.adviseur === a.id); const f = g => g.filter(l => l.stage >= wi).length / (g.filter(l => l.stage >= wi - 1).length || 1); return { a, d: f(c) - f(pv) }; }).sort((x, y) => x.d - y.d).slice(0, 2); who = `<p>De daling in die stap zit vooral bij <b>${advs.map(x => `${x.a.naam} (${(x.d * 100).toFixed(0)}pt)`).join('</b> en <b>')}</b>. De overige adviseurs bewegen binnen de normale bandbreedte.</p>`; }
       const id = 'mini' + Date.now();
-      setTimeout(() => mk(id, { type: 'bar', data: { labels: steps.map(x => x.stap), datasets: [{ label: mLabel(D.VORIG), data: steps.map(x => +(x.prev * 100).toFixed(1)), backgroundColor: GREY, borderRadius: 2 }, { label: mLabel(D.HUIDIG), data: steps.map(x => +(x.cur * 100).toFixed(1)), backgroundColor: steps.map(x => x.d < -0.05 ? '#d92d20' : INK), borderRadius: 2 }] }, options: { maintainAspectRatio: false, scales: { x: { ...xAxis(), ticks: { font: { size: 9.5 } } }, y: yAxis(v => v + '%') }, plugins: { legend: { labels: { font: { size: 10 }, padding: 8 } } } } }), 30);
+      setTimeout(() => mk(id, { type: 'bar', data: { labels: steps.map(x => x.stap), datasets: [{ label: mLabel(D.VORIG), data: steps.map(x => +(x.prev * 100).toFixed(1)), backgroundColor: GREY, borderRadius: 2 }, { label: mLabel(D.HUIDIG), data: steps.map(x => +(x.cur * 100).toFixed(1)), backgroundColor: steps.map(x => x.d < -0.05 ? BAD : INK), borderRadius: 2 }] }, options: { maintainAspectRatio: false, scales: { x: { ...xAxis(), ticks: { font: { size: 9.5 } } }, y: yAxis(v => v + '%') }, plugins: { legend: { labels: { font: { size: 10 }, padding: 8 } } } } }), 30);
       return `<p>De omzet${r.eigen ? ' van jouw leads' : ''} is in ${mLabel(D.HUIDIG)} <b>${pct((s.omzet - p.omzet) / p.omzet, 0)}</b> (${eurK(s.omzet)} vs. ${eurK(p.omzet)}). Twee oorzaken:</p>
         <ul><li><b>Instroom:</b> ${pct((s.leads - p.leads) / p.leads, 0)} leads, vooral <b>Website</b> (${pct((web - webP) / webP, 0)}). Deels seizoen, deels lagere online instroom.</li>
         <li><b>Conversie:</b> de grootste daling zit bij <b>${worst.stap}</b>: van ${pct(worst.prev)} naar ${pct(worst.cur)} (${(worst.d * 100).toFixed(0)}pt). De andere stappen bewegen binnen de normale bandbreedte.</li></ul>
