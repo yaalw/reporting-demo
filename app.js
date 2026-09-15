@@ -28,23 +28,23 @@
     const d = (cur - prev) / prev; const up = d >= 0; const good = opts.invert ? !up : up;
     return `<span class="${Math.abs(d) < 0.005 ? 'dim' : good ? 'pos' : 'neg'}">${up ? '+' : '−'}${pct(Math.abs(d), 1)}</span>`;
   };
-  const INK = '#3b82c8', ACC = '#8a97a8', GREY = '#dde3ea', SOFT = '#a9c8ea', BAD = '#c0392b';
-  const PAL = ['#3b82c8', '#7fb0e0', '#b9d3ee', '#dfeaf6', '#8a97a8', '#b3bcc8', '#d3d9e1', '#eaeef3'];
+  const INK = '#e0712c', ACC = '#3b8ed6', GREY = '#e3e1dc', SOFT = '#a3c9ec', BAD = '#b8392e', COMP = '#3b8ed6';
+  const PAL = ['#e0712c', '#3b8ed6', '#f2a778', '#8fbde6', '#f8caa9', '#c2dbf2', '#fce4d4', '#e3eef9'];
   const role = () => ROLES[state.role];
 
-  Chart.defaults.font.family = "'DM Sans', system-ui, sans-serif";
+  Chart.defaults.font.family = "'Mulish', system-ui, sans-serif";
   Chart.defaults.font.size = 12;
   Chart.defaults.font.size = 11.5;
-  Chart.defaults.color = '#8a97a8';
+  Chart.defaults.color = '#8f8d88';
   Chart.defaults.plugins.legend.position = 'bottom';
   Chart.defaults.plugins.legend.labels.boxWidth = 8;
   Chart.defaults.plugins.legend.labels.boxHeight = 8;
   Chart.defaults.plugins.legend.labels.usePointStyle = true;
   Chart.defaults.plugins.legend.labels.padding = 16;
-  Chart.defaults.plugins.tooltip.backgroundColor = '#1a2433';
+  Chart.defaults.plugins.tooltip.backgroundColor = '#2b2a28';
   Chart.defaults.plugins.tooltip.padding = 10;
   Chart.defaults.plugins.tooltip.cornerRadius = 6;
-  const yAxis = (fmt, extra = {}) => ({ grid: { color: '#eef1f5' }, border: { display: false }, ticks: { callback: fmt || (v => v), maxTicksLimit: 6 }, ...extra });
+  const yAxis = (fmt, extra = {}) => ({ grid: { color: '#f1efeb' }, border: { display: false }, ticks: { callback: fmt || (v => v), maxTicksLimit: 6 }, ...extra });
   const xAxis = () => ({ grid: { display: false }, border: { display: false } });
   const pointer = (e, els) => { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; };
   function mk(id, cfg) { const el = document.getElementById(id); if (!el) return; const c = new Chart(el, cfg); charts.push(c); return c; }
@@ -72,26 +72,77 @@
     else if (k in state.f) state.f[k] = v;
     render();
   }
+  // ---------- Filters (custom popovers, geen native selects) ----------
+  let pop = { key: null, pending: null, q: '' };
+  const FILTER_DEFS = () => [
+    { key: 'leadsoort', label: 'Leadsoort', all: 'Alle leadsoorten', opts: D.LEADSOORTEN.map(x => ({ v: x, l: x })) },
+    ...(role().eigen ? [] : [{ key: 'adviseur', label: 'Adviseur', all: 'Alle adviseurs', opts: D.ADVISEURS.map(a => ({ v: a.id, l: a.naam, sub: a.regio })), search: true }]),
+    { key: 'product', label: 'Product', all: 'Alle producten', opts: D.PRODUCTEN.map(x => ({ v: x.naam, l: x.naam })) },
+    ...(role().pages.includes('regio') ? [{ key: 'regio', label: 'Regio', all: "Alle regio's", opts: D.REGIOS.map(x => ({ v: x.naam, l: x.naam })), search: true }] : []),
+  ];
   function renderFilters() {
-    const months = periodMonths(); const n = months.length; const r = role();
-    const preset = (l, k, len) => `<button type="button" class="preset ${n === len && months.at(-1) === D.HUIDIG ? 'on' : ''}" data-preset="${k}">${l}</button>`;
-    const sel = (key, label, opts) => `<select data-f="${key}" class="${state.f[key] ? 'on' : ''}"><option value="">${label}</option>${opts.map(o => `<option value="${o.v}" ${state.f[key] === o.v ? 'selected' : ''}>${o.l}</option>`).join('')}</select>`;
-    const chips = Object.entries(dimFilters()).map(([k, v]) => `<span class="chip"><span>${DIMS[k]}</span>${dimLabel(k, v)}<button data-clear="${k}" aria-label="Verwijder filter">×</button></span>`).join('');
+    const months = periodMonths(), pm = prevMonths(months); const r = role();
+    const active = Object.keys(dimFilters()).length;
+    const trig = (key, label, on, extra = '') => `<button class="dd ${on ? 'on' : ''}" data-dd="${key}" ${extra}><span>${label}</span><svg viewBox="0 0 10 6"><path d="M1 1l4 4 4-4"/></svg></button>`;
     $('#filters').innerHTML = `
-      <div class="group"><span class="gl">Periode</span>${preset('Maand', 'm', 1)}${preset('Kwartaal', '3', 3)}${preset('Jaar', '12', 12)}</div>
-      <div class="group"><div class="range"><input type="month" data-f="van" min="${KEYS[0]}" max="${KEYS.at(-1)}" value="${state.f.van}"><span>–</span><input type="month" data-f="tot" min="${KEYS[0]}" max="${KEYS.at(-1)}" value="${state.f.tot}"></div></div>
-      ${sel('leadsoort', 'Leadsoort', D.LEADSOORTEN.map(x => ({ v: x, l: x })))}
-      ${r.eigen ? '' : sel('adviseur', 'Adviseur', D.ADVISEURS.map(a => ({ v: a.id, l: a.naam })))}
-      ${sel('product', 'Product', D.PRODUCTEN.map(x => ({ v: x.naam, l: x.naam })))}
-      ${r.pages.includes('regio') ? sel('regio', 'Regio', D.REGIOS.map(x => ({ v: x.naam, l: x.naam }))) : ''}
-      ${chips}${chips ? '<button class="clear" data-clear="all">Wis filters</button>' : ''}
+      ${trig('periode', `<b>${periodLabel(months)}</b>${pm.length ? `<i>vs. ${periodLabel(pm)}</i>` : ''}`, false, 'data-cal')}
+      ${FILTER_DEFS().map(f => { const v = state.f[f.key]; const o = v && f.opts.find(o => o.v === v); return trig(f.key, o ? `${f.label}: <b>${o.l}</b>` : f.label, !!o); }).join('')}
+      ${active ? '<button class="clear" data-clear="all">Wis filters</button>' : ''}
       <span class="scope">${r.eigen ? `Alleen eigen gegevens · ${r.naam}` : `${num(inMonths(filtered(), months).length)} leads in selectie`}</span>`;
-    document.querySelectorAll('#filters [data-f]').forEach(el => el.onchange = () => { const v = el.value; if ((el.dataset.f === 'van' || el.dataset.f === 'tot') && !KEYS.includes(v)) { el.value = state.f[el.dataset.f]; return; } state.f[el.dataset.f] = v; render(); });
-    document.querySelectorAll('#filters [data-preset]').forEach(el => el.onclick = () => { const k = el.dataset.preset; state.f.tot = D.HUIDIG; state.f.van = k === 'm' ? D.HUIDIG : KEYS.at(-(k === '3' ? 3 : 12)); render(); });
   }
+  function popEl() { let el = $('#pop'); if (!el) { el = document.createElement('div'); el.id = 'pop'; el.className = 'pop'; el.hidden = true; document.body.appendChild(el); } return el; }
+  function openPop(key, trigger) {
+    pop = { key, pending: null, q: '' }; renderPop();
+    const el = popEl(), b = trigger.getBoundingClientRect();
+    const below = window.innerHeight - b.bottom - 16; const top = el.offsetHeight > below ? Math.max(8, b.top - el.offsetHeight - 8) : b.bottom + 8;
+    el.style.top = `${top}px`; el.style.left = `${Math.min(b.left, window.innerWidth - el.offsetWidth - 16)}px`; el.style.minWidth = key === 'role' ? `${b.width}px` : '';
+    document.querySelectorAll('.dd').forEach(d => d.classList.toggle('open', d.dataset.dd === key));
+    const inp = el.querySelector('input'); if (inp) inp.focus();
+  }
+  function closePop() { pop.key = null; const el = $('#pop'); if (el) el.hidden = true; document.querySelectorAll('.dd.open').forEach(d => d.classList.remove('open')); }
+  function renderPop() {
+    const el = popEl(); el.hidden = false;
+    if (pop.key === 'periode') {
+      const months = periodMonths(), pm = prevMonths(months);
+      const a = pop.pending ? KEYS.indexOf(pop.pending) : KEYS.indexOf(months[0]), b = pop.pending ? -1 : KEYS.indexOf(months.at(-1));
+      const years = [...new Set(D.MAANDEN.map(m => m.key.slice(0, 4)))];
+      const presets = [['Deze maand', [D.HUIDIG, D.HUIDIG]], ['Vorige maand', [D.VORIG, D.VORIG]], ['Laatste 3 maanden', [KEYS.at(-3), D.HUIDIG]], ['Laatste 6 maanden', [KEYS.at(-6), D.HUIDIG]], ['Laatste 12 maanden', [KEYS.at(-12), D.HUIDIG]], ['Alles', [KEYS[0], KEYS.at(-1)]]];
+      el.innerHTML = `<div class="cal">
+        <div class="presets">${presets.map(([l, [v, t]]) => `<button class="${state.f.van === v && state.f.tot === t ? 'on' : ''}" data-range="${v}|${t}">${l}</button>`).join('')}</div>
+        <div class="months">
+          <div class="calhint">${pop.pending ? `Kies een eindmaand (start: ${mLabel(pop.pending)})` : 'Klik op een startmaand, daarna op een eindmaand'}</div>
+          ${years.map(y => `<div class="yrow"><span class="yr">${y}</span><div class="mgrid">${D.MAANDEN.filter(m => m.key.startsWith(y)).map(m => { const i = KEYS.indexOf(m.key); const inR = b >= 0 && i >= a && i <= b; return `<button class="m ${inR ? 'in' : ''} ${i === a ? 'start' : ''} ${i === b ? 'end' : ''} ${m.key === D.HUIDIG ? 'now' : ''}" data-m="${m.key}">${m.label.split(' ')[0]}</button>`; }).join('')}</div></div>`).join('')}
+          <div class="calfoot">Vergelijking: <b>${pm.length ? periodLabel(pm) : 'niet beschikbaar'}</b> · zelfde lengte, direct ervoor</div>
+        </div></div>`;
+      return;
+    }
+    if (pop.key === 'role') { el.innerHTML = `<div class="list">${Object.entries(ROLES).map(([k, r]) => `<button class="opt ${state.role === k ? 'on' : ''}" data-opt="${k}"><span>${r.label}</span><small>${r.naam}</small></button>`).join('')}</div>`; return; }
+    const f = FILTER_DEFS().find(x => x.key === pop.key); if (!f) return closePop();
+    const q = pop.q.toLowerCase(); const opts = f.opts.filter(o => !q || o.l.toLowerCase().includes(q) || (o.sub || '').toLowerCase().includes(q));
+    el.innerHTML = `<div class="list">
+      ${f.search ? `<div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input placeholder="Zoek ${f.label.toLowerCase()}…" value="${pop.q}"></div>` : ''}
+      <button class="opt ${!state.f[f.key] ? 'on' : ''}" data-opt="">${f.all}</button>
+      ${opts.map(o => `<button class="opt ${state.f[f.key] === o.v ? 'on' : ''}" data-opt="${o.v}"><span>${o.l}</span>${o.sub ? `<small>${o.sub}</small>` : ''}</button>`).join('')}
+      ${opts.length ? '' : '<div class="none">Geen resultaten</div>'}</div>`;
+  }
+  document.addEventListener('click', e => {
+    const t = e.target.closest('[data-dd]');
+    if (t) { if (pop.key === t.dataset.dd) closePop(); else openPop(t.dataset.dd, t); return; }
+    const el = $('#pop'); if (!el || el.hidden) return;
+    if (!el.contains(e.target)) { closePop(); return; }
+    const o = e.target.closest('[data-opt]'); if (o) { if (pop.key === 'role') setRole(o.dataset.opt); else { state.f[pop.key] = o.dataset.opt; closePop(); render(); } return; }
+    const rg = e.target.closest('[data-range]'); if (rg) { const [v, t2] = rg.dataset.range.split('|'); state.f.van = v; state.f.tot = t2; closePop(); render(); return; }
+    const m = e.target.closest('[data-m]'); if (m) {
+      if (!pop.pending) { pop.pending = m.dataset.m; renderPop(); }
+      else { let v = pop.pending, t2 = m.dataset.m; if (KEYS.indexOf(v) > KEYS.indexOf(t2)) [v, t2] = [t2, v]; state.f.van = v; state.f.tot = t2; closePop(); render(); }
+    }
+  });
+  document.addEventListener('input', e => { if (e.target.closest('#pop .search')) { pop.q = e.target.value; const el = $('#pop'); renderPop(); const inp = el.querySelector('input'); inp.focus(); inp.setSelectionRange(pop.q.length, pop.q.length); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closePop(); if (e.key === 'Enter' && e.target.closest('#pop .search')) { const first = $('#pop .opt:not([data-opt=""])'); if (first) first.click(); } });
 
   // ---------- Render ----------
   function render() {
+    closePop();
     clearCharts();
     const r = role();
     if (!r.pages.includes(state.page)) state.page = r.pages[0];
@@ -257,7 +308,7 @@
     const cur = inMonths(filtered(), months);
     return D.REGIOS.map(r => { const g = cur.filter(l => l.regio === r.naam); const s = stats(g); const cap = regioCap(r.naam) * months.length; const advs = D.ADVISEURS.filter(a => a.regio === r.naam).length; return { r, s, cap, advs, ratio: cap ? s.leads / cap : Infinity }; });
   }
-  const ratioColor = x => x === Infinity ? '#6b7a8c' : x > 1.3 ? '#c0574a' : x > 0.9 ? '#d3a04f' : x > 0.6 ? '#3b82c8' : '#a9c8ea';
+  const ratioColor = x => x === Infinity ? '#7d7a74' : x > 1.3 ? '#b8392e' : x > 0.9 ? '#e0712c' : x > 0.6 ? '#3b8ed6' : '#a3c9ec';
   function pageRegio() {
     const months = periodMonths(), pm = prevMonths(months); const rows = regioRows(months).sort((a, b) => b.ratio - a.ratio);
     const cur = inMonths(filtered(), months), prev = inMonths(filtered(), pm); const s = stats(cur), p = stats(prev);
@@ -275,7 +326,7 @@
             ${section('Per provincie', 'druk = leads per beschikbaar afspraakslot', `<div class="row">
         <div class="card c4">${cardhead('Kaart', 'Leads per beschikbaar afspraakslot · klik op een provincie')}
           <div class="tiles">${D.REGIOS.map(r => { const x = rows.find(q => q.r.naam === r.naam); return `<div class="tile" data-set="regio" data-val="${r.naam}" style="grid-column:${r.col + 1};grid-row:${r.row + 1};background:${ratioColor(x.ratio)}"><b>${r.naam}</b><small>${x.s.leads} · ${x.advs ? x.ratio.toFixed(2) : 'geen adviseur'}</small></div>`; }).join('')}</div>
-          <div class="legend"><span><i style="background:#a9c8ea"></i>ruimte</span><span><i style="background:#3b82c8"></i>in balans</span><span><i style="background:#d3a04f"></i>krap</span><span><i style="background:#c0574a"></i>tekort</span><span><i style="background:#6b7a8c"></i>geen eigen adviseur</span></div></div>
+          <div class="legend"><span><i style="background:#a3c9ec"></i>ruimte</span><span><i style="background:#3b8ed6"></i>in balans</span><span><i style="background:#e0712c"></i>krap</span><span><i style="background:#b8392e"></i>tekort</span><span><i style="background:#7d7a74"></i>geen eigen adviseur</span></div></div>
         <div class="card c8">${cardhead('Per regio', 'Gesorteerd op druk (leads per afspraakslot) · klik op een regio')}
           <table><thead><tr><th>Regio</th><th class="num">Leads</th><th class="num">Orders</th><th class="num">Conversie</th><th class="num">Omzet</th><th class="num">Adviseurs</th><th class="num">Druk</th><th></th></tr></thead><tbody>
           ${rows.map(x => `<tr class="drillrow" data-set="regio" data-val="${x.r.naam}"><td>${x.r.naam}</td><td class="num">${x.s.leads}</td><td class="num">${x.s.orders}</td><td class="num">${pct(x.s.conv, 1)}</td><td class="num">${eur(x.s.omzet)}</td><td class="num">${x.advs}</td><td class="num">${x.cap ? x.ratio.toFixed(2) : '∞'}</td><td>${x.cap === 0 ? '<span class="tag">geen eigen adviseur</span>' : x.ratio > 1.3 ? '<span class="tag bad">tekort</span>' : x.ratio > 0.9 ? '<span class="tag warn">krap</span>' : '<span class="tag good">in balans</span>'}</td></tr>`).join('')}</tbody></table></div>
@@ -314,7 +365,7 @@
     const list = ams(); const S = D.SNAPSHOTS;
     mk('hero', { type: 'line', data: { labels: S.map(s => s.label), datasets: list.map((am, i) => ({ label: am, data: S.map(s => s.per[am].open), borderColor: PAL[i], backgroundColor: PAL[i] + '1f', fill: true, tension: .3, pointRadius: 0, borderWidth: 1.5 })) }, options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: xAxis(), y: { ...yAxis(v => eurK(v)), stacked: true } }, plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${eur(c.raw)}` } } } } });
     const last = S.at(-1), prev = S.at(-2); const t = k => sum(list, am => last.per[am][k]); const start = sum(list, am => prev.per[am].open);
-    let run = start; const steps = [['Start', [0, start], GREY]]; [['Nieuw', t('nieuw'), INK], ['Gewonnen', -t('gewonnen'), SOFT], ['Verloren', -t('verloren'), BAD], ['Gemuteerd', t('gemuteerd'), '#b3bcc8']].forEach(([l, v, c]) => { steps.push([l, [run, run + v], c]); run += v; }); steps.push(['Eind', [0, run], '#8a97a8']);
+    let run = start; const steps = [['Start', [0, start], GREY]]; [['Nieuw', t('nieuw'), INK], ['Gewonnen', -t('gewonnen'), COMP], ['Verloren', -t('verloren'), BAD], ['Gemuteerd', t('gemuteerd'), '#c9c6bf']].forEach(([l, v, c]) => { steps.push([l, [run, run + v], c]); run += v; }); steps.push(['Eind', [0, run], '#8f8d88']);
     mk('chWater', { type: 'bar', data: { labels: steps.map(s => s[0]), datasets: [{ data: steps.map(s => s[1]), backgroundColor: steps.map(s => s[2]), borderRadius: 3 }] }, options: { maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => eur(c.raw[1] - c.raw[0]) } } }, scales: { x: xAxis(), y: yAxis(v => eurK(v), { min: Math.floor(start * 0.8 / 1e5) * 1e5 }) } } });
   };
 
@@ -427,17 +478,18 @@
     if (e.target.closest('[data-copilot]')) { $('#copilot').hidden ? openCopilot() : closeCopilot(); return; }
     const n = e.target.closest('.nav'); if (n && !n.disabled) { state.page = n.dataset.page; render(); }
   });
-  $('#role').onchange = e => { state.role = e.target.value; state.f.adviseur = ''; if (!role().pages.includes('regio')) state.f.regio = ''; resetCopilot(); render(); };
+  function setRole(k) { state.role = k; state.f.adviseur = ''; if (!role().pages.includes('regio')) state.f.regio = ''; $('#roleTrig span').textContent = `${role().label} · ${role().naam}`; closePop(); resetCopilot(); render(); }
   $('#closeCopilot').onclick = closeCopilot;
   $('#askForm').onsubmit = e => { e.preventDefault(); const v = $('#askInput').value.trim(); if (!v) return; $('#askInput').value = ''; ask(v); };
 
   // Deep links: #page=sales&role=adviseur&ask=<vraag>&regio=Zuid-Holland&product=Warmtepomp&van=2026-07&tot=2026-09
   const h = new URLSearchParams(location.hash.slice(1));
-  if (h.get('role') && ROLES[h.get('role')]) { state.role = h.get('role'); $('#role').value = state.role; }
+  if (h.get('role') && ROLES[h.get('role')]) { state.role = h.get('role'); $('#roleTrig span').textContent = `${role().label} · ${role().naam}`; }
   if (h.get('page')) state.page = h.get('page');
   ['van', 'tot', 'leadsoort', 'adviseur', 'product', 'regio'].forEach(k => { if (h.get(k)) state.f[k] = h.get(k); });
   resetCopilot();
   render();
+  if (h.get('open')) { const t = document.querySelector(`[data-dd="${h.get('open')}"]`); if (t) openPop(h.get('open'), t); }
   if (h.get('ask')) openCopilot(h.get('ask'));
   else if (h.get('copilot')) openCopilot();
 })();
