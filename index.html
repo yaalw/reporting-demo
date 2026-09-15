@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solvara Insights · Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --ink: #14171f; --muted: #6b7280; --line: #e5e7eb;
+    --accent: #1f5eff; --accent-soft: #e8efff; --good: #12855a; --good-soft: #e3f5ec; --bad: #d23c3c; --bad-soft: #fde9e9; --warn: #c77a00; --warn-soft: #fff3df;
+    --side: #0f1420; --side-ink: #c9d1e3;
+    --radius: 12px; --font: 'Inter', system-ui, -apple-system, sans-serif; --mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { font-family: var(--font); background: var(--bg); color: var(--ink); font-size: 14px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
+  button { font: inherit; cursor: pointer; }
+  select, input { font: inherit; }
+
+  .app { display: grid; grid-template-columns: 232px 1fr; grid-template-rows: 56px 1fr; height: 100vh; }
+  .app.copilot-open { grid-template-columns: 232px 1fr 400px; }
+
+  /* Topbar */
+  .topbar { grid-column: 1 / -1; background: var(--panel); border-bottom: 1px solid var(--line); display: flex; align-items: center; padding: 0 20px; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; letter-spacing: -0.01em; min-width: 212px; }
+  .brand .logo { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, #1f5eff, #7b3fe4); display: grid; place-items: center; color: white; font-size: 13px; }
+  .brand small { font-weight: 500; color: var(--muted); font-size: 11px; display: block; margin-top: -2px; }
+  .topbar .spacer { flex: 1; }
+  .sync { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+  .sync .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px var(--good-soft); }
+  .rolebox { display: flex; align-items: center; gap: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 4px 6px 4px 10px; }
+  .rolebox .ms { display: flex; gap: 2px; }
+  .rolebox .ms i { width: 6px; height: 6px; display: block; }
+  .rolebox label { font-size: 12px; color: var(--muted); }
+  .rolebox select { border: none; background: var(--panel); border-radius: 7px; padding: 5px 8px; font-weight: 600; font-size: 13px; }
+  .avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; display: grid; place-items: center; font-size: 12px; }
+  .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 9px; padding: 7px 12px; font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; gap: 8px; }
+  .btn.primary { background: var(--ink); color: white; border-color: var(--ink); }
+  .btn.primary:hover { background: #262b38; }
+
+  /* Sidebar */
+  .side { background: var(--side); color: var(--side-ink); padding: 18px 12px; display: flex; flex-direction: column; gap: 4px; }
+  .side .sec { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: #6f7a93; padding: 8px 10px 6px; }
+  .nav { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 9px; color: var(--side-ink); background: transparent; border: none; width: 100%; text-align: left; font-weight: 500; }
+  .nav:hover { background: #1a2131; }
+  .nav.active { background: #232c40; color: white; }
+  .nav .ico { width: 18px; text-align: center; opacity: .8; }
+  .nav .lock { margin-left: auto; font-size: 11px; opacity: .5; }
+  .nav[disabled] { opacity: .35; cursor: not-allowed; }
+  .side .foot { margin-top: auto; font-size: 11.5px; color: #6f7a93; padding: 10px; border-top: 1px solid #1c2435; line-height: 1.6; }
+  .side .foot b { color: #a9b3c9; font-weight: 600; }
+
+  /* Main */
+  .main { overflow: auto; padding: 22px 26px 40px; }
+  .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+  .page-head h1 { font-size: 22px; margin: 0; letter-spacing: -0.02em; }
+  .page-head p { margin: 4px 0 0; color: var(--muted); }
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; }
+  .filters select { border: 1px solid var(--line); background: var(--panel); border-radius: 9px; padding: 7px 10px; font-size: 13px; font-weight: 500; }
+  .scope { font-size: 12px; color: var(--accent); background: var(--accent-soft); padding: 4px 10px; border-radius: 999px; font-weight: 600; }
+
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(12, 1fr); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; min-width: 0; }
+  .card h3 { margin: 0 0 2px; font-size: 13.5px; font-weight: 600; }
+  .card .sub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+  .c3 { grid-column: span 3; } .c4 { grid-column: span 4; } .c6 { grid-column: span 6; } .c8 { grid-column: span 8; } .c12 { grid-column: span 12; }
+  .chart { position: relative; height: 240px; }
+  .card.stretch { display: flex; flex-direction: column; } .card.stretch .chart { flex: 1; min-height: 240px; height: auto; }
+  .chart.tall { height: 300px; } .chart.short { height: 180px; }
+
+  .kpi .lbl { color: var(--muted); font-size: 12px; font-weight: 500; }
+  .kpi .val { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; margin: 4px 0 6px; font-variant-numeric: tabular-nums; }
+  .delta { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+  .delta.up { color: var(--good); background: var(--good-soft); } .delta.down { color: var(--bad); background: var(--bad-soft); } .delta.flat { color: var(--muted); background: var(--bg); }
+  .kpi .vs { color: var(--muted); font-size: 11.5px; margin-left: 6px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 8px; border-bottom: 1px solid #f0f1f3; font-variant-numeric: tabular-nums; }
+  td.num, th.num { text-align: right; }
+  tr:last-child td { border-bottom: none; }
+  .bar { height: 6px; border-radius: 4px; background: var(--accent); display: inline-block; vertical-align: middle; }
+  .tag { white-space: nowrap; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--bg); color: var(--muted); font-weight: 600; }
+  .tag.bad { background: var(--bad-soft); color: var(--bad); } .tag.good { background: var(--good-soft); color: var(--good); } .tag.warn { background: var(--warn-soft); color: var(--warn); }
+
+  .alerts { display: flex; flex-direction: column; gap: 8px; }
+  .alert { display: flex; flex-wrap: wrap; gap: 8px 10px; padding: 10px 12px; border-radius: 10px; background: var(--bg); border-left: 3px solid var(--warn); }
+  .alert.bad { border-left-color: var(--bad); } .alert.good { border-left-color: var(--good); }
+  .alert b { display: block; font-size: 13px; } .alert span { color: var(--muted); font-size: 12px; }
+  .alert button { flex-basis: 100%; width: max-content; align-self: flex-start; border: 1px solid var(--line); background: var(--panel); border-radius: 7px; padding: 4px 8px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+
+  /* Funnel */
+  .funnel { display: flex; flex-direction: column; gap: 6px; }
+  .frow { display: grid; grid-template-columns: 72px minmax(0,1fr) 44px 84px; align-items: center; gap: 10px; font-size: 13px; }
+  .frow .fb { height: 26px; border-radius: 6px; background: var(--accent); opacity: .9; min-width: 4px; transition: width .4s; }
+  .frow .n { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .frow .cv { font-size: 12px; text-align: right; }
+
+  /* Region tiles */
+  .tiles { display: grid; grid-template-columns: repeat(5, 1fr); grid-template-rows: repeat(5, 62px); gap: 6px; }
+  .tile { border-radius: 8px; padding: 7px 9px; color: white; font-size: 11px; display: flex; flex-direction: column; justify-content: space-between; cursor: default; position: relative; }
+  .tile b { font-size: 12px; display: block; line-height: 1.2; }
+  .tile small { opacity: .85; }
+  .legend { display: flex; gap: 12px; font-size: 11.5px; color: var(--muted); margin-top: 10px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; }
+
+  /* CoPilot panel */
+  .copilot[hidden] { display: none; }
+  .copilot { background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  .copilot .head { padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; }
+  .copilot .head .logo { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, #7b3fe4, #1f5eff); display: grid; place-items: center; color: white; font-size: 14px; }
+  .copilot .head b { display: block; font-size: 13.5px; }
+  .copilot .head small { color: var(--muted); font-size: 11.5px; }
+  .copilot .head .close { margin-left: auto; border: none; background: none; color: var(--muted); font-size: 18px; }
+  .msgs { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 92%; padding: 10px 12px; border-radius: 12px; font-size: 13px; line-height: 1.5; }
+  .msg.user { align-self: flex-end; background: var(--ink); color: white; border-bottom-right-radius: 4px; }
+  .msg.bot { align-self: flex-start; background: var(--bg); border-bottom-left-radius: 4px; }
+  .msg.bot p { margin: 0 0 8px; } .msg.bot p:last-child { margin-bottom: 0; }
+  .msg.bot ul { margin: 4px 0 8px; padding-left: 18px; } .msg.bot li { margin: 2px 0; }
+  .msg.bot .src { font-size: 11px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 6px; margin-top: 8px; font-family: var(--mono); }
+  .msg.bot .src b { font-weight: 500; color: var(--ink); }
+  .msg.bot .mini { height: 130px; margin: 8px 0; }
+  .msg.bot .deny { color: var(--bad); font-weight: 600; }
+  .typing { display: inline-flex; gap: 4px; padding: 4px 0; } .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: blink 1s infinite; } .typing i:nth-child(2) { animation-delay: .2s } .typing i:nth-child(3) { animation-delay: .4s }
+  @keyframes blink { 0%, 80%, 100% { opacity: .25 } 40% { opacity: 1 } }
+  .chips { padding: 0 16px 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 5px 10px; font-size: 12px; color: var(--ink); text-align: left; }
+  .chip:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .ask { display: flex; gap: 8px; padding: 12px 16px 16px; border-top: 1px solid var(--line); }
+  .ask input { flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
+  .ask input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  .ask button { background: var(--accent); color: white; border: none; border-radius: 10px; padding: 0 14px; font-weight: 600; }
+
+  .empty { padding: 40px; text-align: center; color: var(--muted); }
+  .hint { font-size: 12px; color: var(--muted); }
+  .arch { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; align-items: stretch; }
+  .arch .node { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px; font-size: 12.5px; position: relative; }
+  .arch .node b { display: block; margin-bottom: 4px; font-size: 13px; }
+  .arch .node:not(:last-child)::after { content: '→'; position: absolute; right: -12px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 14px; }
+
+  @media (max-width: 1200px) { .app.copilot-open { grid-template-columns: 232px 1fr 340px; } .c3 { grid-column: span 6; } .c4 { grid-column: span 6; } }
+  @media (max-width: 900px) { .app, .app.copilot-open { grid-template-columns: 1fr; grid-template-rows: 56px auto 1fr; } .side { flex-direction: row; flex-wrap: wrap; } .side .foot, .side .sec { display: none; } .copilot { position: fixed; inset: 56px 0 0 0; z-index: 5; } .c3, .c4, .c6, .c8 { grid-column: span 12; } .brand { min-width: 0; } .sync { display: none; } }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="topbar">
+    <div class="brand"><div class="logo">S</div><div>Solvara Insights<small>Rapportage &amp; analyse</small></div></div>
+    <div class="sync"><span class="dot"></span> CRM-API gesynchroniseerd 14:32 · snapshot-database: 26 weken</div>
+    <div class="spacer"></div>
+    <div class="rolebox">
+      <span class="ms" title="Aangemeld via Microsoft 365"><i style="background:#f25022"></i><i style="background:#7fba00"></i><i style="background:#00a4ef"></i><i style="background:#ffb900"></i></span>
+      <label for="role">M365-rol</label>
+      <select id="role">
+        <option value="directie">Directie</option>
+        <option value="sales">Salesmanager</option>
+        <option value="adviseur">Adviseur (Lotte Bakker)</option>
+      </select>
+    </div>
+    <div class="avatar" id="avatar">DR</div>
+    <button class="btn primary" id="toggleCopilot">✦ CoPilot</button>
+  </header>
+
+  <aside class="side">
+    <div class="sec">Dashboards</div>
+    <button class="nav" data-page="management"><span class="ico">◧</span> Management</button>
+    <button class="nav" data-page="sales"><span class="ico">◔</span> Sales &amp; commercie</button>
+    <button class="nav" data-page="product"><span class="ico">▤</span> Productanalyse</button>
+    <button class="nav" data-page="regio"><span class="ico">◫</span> Regionale analyse</button>
+    <button class="nav" data-page="pipeline"><span class="ico">◍</span> Pipeline-ontwikkeling</button>
+    <div class="sec">Over</div>
+    <button class="nav" data-page="opzet"><span class="ico">⌘</span> Technische opzet</button>
+    <div class="foot"><b>Databronnen</b><br>CRM-API (bronsysteem)<br>Reporting-DB (Azure)<br>Rechten: Microsoft 365 / Okta</div>
+  </aside>
+
+  <main class="main" id="main"></main>
+
+  <section class="copilot" id="copilot" hidden>
+    <div class="head"><div class="logo">✦</div><div><b>CoPilot · businessvragen</b><small id="cpScope">Antwoorden binnen jouw rol en rechten</small></div><button class="close" id="closeCopilot" aria-label="Sluiten">×</button></div>
+    <div class="msgs" id="msgs"></div>
+    <div class="chips" id="chips"></div>
+    <form class="ask" id="askForm"><input id="askInput" placeholder="Stel een businessvraag…" autocomplete="off"><button type="submit">Vraag</button></form>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
